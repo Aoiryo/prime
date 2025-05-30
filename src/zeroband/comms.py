@@ -502,9 +502,12 @@ class ElasticDeviceMesh:
     def _start_iperf_server(self) -> None:
         """Start the iperf server process."""
         try:
-            from zeroband.utils.ip import get_ip_address
+            from zeroband.utils.ip import get_ip_address, get_ipv6_address
 
-            iperf_addr = get_ip_address(IPERF_IFNAME)
+            try:
+                iperf_addr = get_ipv6_address(IPERF_IFNAME)
+            except:
+                iperf_addr = get_ip_address(IPERF_IFNAME)
             iperf_port = IPERF_PORT + self.world_info.global_rank
             cmd: List[str] = ["iperf", "-s", "-p", str(iperf_port)]
             self.server_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
