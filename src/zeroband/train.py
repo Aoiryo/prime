@@ -141,6 +141,10 @@ def train(config: Config):
             enable=config.diloco is not None, live_recovery_rank_src=config.ckpt.live_recovery_rank_src
         )
 
+        elastic_device_mesh.cuda_local_mesh = elastic_device_mesh.mesh["intranode"]
+        elastic_device_mesh.cuda_local_mesh._dim_group_infos = []
+        elastic_device_mesh.cuda_local_mesh._dim_group_infos.append(elastic_device_mesh.mesh._dim_group_infos[-1])
+        # from ipdb import set_trace; set_trace()
         mp_policy = MixedPrecisionPolicy(
             param_dtype=torch.bfloat16, reduce_dtype=torch.float32 if config.train.reduce_fp32 else None
         )

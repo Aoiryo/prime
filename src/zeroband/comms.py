@@ -90,19 +90,25 @@ class ElasticDeviceMesh:
 
     def _init_global_store(self):
         self._logger.info(
-            f"[{self.world_info.global_unique_id}](Leader: {self._global_leader}) TCPStore init: Connecting via {self.world_info.global_addr}:{self.world_info.global_port + self.world_info.rank}"
+            f"[{self.world_info.global_unique_id}](Leader: {self._global_leader}) TCPStore init: Connecting via {self.world_info.global_addr}:{self.world_info.usable_port[2+self.world_info.local_rank]}"
         )
         self.global_store = dist.TCPStore(
             host_name=self.world_info.global_addr,
-            port=self.world_info.global_port + self.world_info.rank,
+            port=self.world_info.usable_port[2+self.world_info.local_rank],
             timeout=TCPSTORE_TIMEOUT,
             is_master=self._global_leader,
+        )
+        self._logger.info(
+            f"[{self.world_info.global_unique_id}](Leader: {self._global_leader}) finished global store init. "
         )
         self.god_store = dist.TCPStore(
             host_name=self.world_info.global_addr,
             port=self.world_info.global_port,
             timeout=TCPSTORE_TIMEOUT,
-            is_master=False,
+            is_master=self._global_leader,
+        )
+        self._logger.info(
+            f"[{self.world_info.global_unique_id}](Leader: {self._global_leader}) finished god store init. "
         )
 
     def _init_global_store_values(self):
