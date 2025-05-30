@@ -33,3 +33,16 @@ def get_ip_address(ifname: str) -> str:
     )
     s.close()
     return ret
+
+def get_ipv6_address(ifname: str) -> str:
+    s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    try:
+        import netifaces
+        addresses = netifaces.ifaddresses(ifname)
+        ipv6_addrs = addresses.get(netifaces.AF_INET6, [])
+        for addr in ipv6_addrs:
+            if "%" not in addr["addr"]:
+                return addr["addr"]
+        raise RuntimeError("No suitable IPv6 address found")
+    finally:
+        s.close()
