@@ -14,6 +14,8 @@ from uuid import uuid4
 import toposolve
 from zeroband.utils.ip import parse_iperf_output
 
+from torch.distributed.elastic.rendezvous import get_rendezvous_handler
+
 TCPSTORE_TIMEOUT = timedelta(seconds=int(os.getenv("ZERO_BAND_GLOBAL_STORE_TIMEOUT_SECONDS", "300")))
 TCPSTORE_POLLING_INTERVAL = float(os.getenv("ZERO_BAND_GLOBAL_STORE_POLLING_INTERVAL_SECONDS", "0.1"))
 GLOBAL_PG_TIMEOUT = timedelta(seconds=int(os.getenv("ZERO_BAND_GLOBAL_PG_TIMEOUT_SECONDS", "600")))
@@ -86,7 +88,10 @@ class ElasticDeviceMesh:
 
     def __del__(self):
         self._stop_heartbeat()
-        dist.destroy_process_group()
+        try:
+            dist.destroy_process_group()
+        except:
+            return
 
     def _init_global_store(self):
         self._logger.info(
