@@ -14,7 +14,7 @@ from uuid import uuid4
 import toposolve
 from zeroband.utils.ip import parse_iperf_output
 
-from torch.distributed.elastic.rendezvous import get_rendezvous_handler
+# from torch.distributed.elastic.rendezvous import get_rendezvous_handler
 
 TCPSTORE_TIMEOUT = timedelta(seconds=int(os.getenv("ZERO_BAND_GLOBAL_STORE_TIMEOUT_SECONDS", "300")))
 TCPSTORE_POLLING_INTERVAL = float(os.getenv("ZERO_BAND_GLOBAL_STORE_POLLING_INTERVAL_SECONDS", "0.1"))
