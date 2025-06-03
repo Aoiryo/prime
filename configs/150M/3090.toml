@@ -18,3 +18,8 @@ lr = 4e-4
 [diloco]
 inner_steps = 5
 
+[ckpt]
+interval = 5
+topk = 40
+path = "./data/test"
+remote_data_path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime"

@@ -88,10 +88,7 @@ class ElasticDeviceMesh:
 
     def __del__(self):
         self._stop_heartbeat()
-        try:
-            dist.destroy_process_group()
-        except:
-            return
+        dist.destroy_process_group()
 
     def _init_global_store(self):
         self._logger.info(
@@ -344,11 +341,11 @@ class ElasticDeviceMesh:
                 self._logger.warning(f"Node {gid} has no heartbeat")
         return dead_nodes
 
-    def _resolve_world(self, admit_joiners: bool = False) -> bool:
+    def _resolve_world(self, admit_joiners: bool = True) -> bool:
         """Set the new world size and ranks for all nodes if there are joiners or dead nodes. Else, do nothing.
 
         Args:
-            admit_joiners (bool, optional): Whether to admit joiners. Defaults to False.
+            admit_joiners (bool, optional): Whether to admit joiners. Defaults to True.
         Returns:
             bool: True if the world was changed, False otherwise.
         """
@@ -401,11 +398,11 @@ class ElasticDeviceMesh:
         self.global_store.set("status", "reinit")
         return True
 
-    def maybe_reinit_global_pg(self, admit_joiners: bool = False) -> bool:
+    def maybe_reinit_global_pg(self, admit_joiners: bool = True) -> bool:
         """Reinitialize the global_pg if there are is a state change.
 
         Args:
-            admit_joiners (bool, optional): Whether to admit joiners. Defaults to False.
+            admit_joiners (bool, optional): Whether to admit joiners. Defaults to True.
         Returns:
             bool: True if the global_pg was reinitialized, False otherwise.
         """
