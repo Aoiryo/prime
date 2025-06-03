@@ -81,7 +81,7 @@ class Diloco:
         """
         _start_time = time.perf_counter()
 
-        self.elastic_device_mesh.maybe_reinit_global_pg(admit_joiners=False)
+        self.elastic_device_mesh.maybe_reinit_global_pg(admit_joiners=True)
         world_size_post_init = self.elastic_device_mesh.global_pg.size()
 
         world_size = world_size_post_init
