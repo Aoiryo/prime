@@ -165,6 +165,16 @@ def seqlens_to_docs_tensor(seqlens: list[torch.Tensor]) -> torch.Tensor:
     return torch.stack([torch.repeat_interleave(torch.arange(len(seq), device=seq.device), seq) for seq in seqlens])
 
 
+class DocumentCausalMask:
+    def __init__(self, docs: torch.Tensor):
+        self.docs = docs
+
+    def __call__(self, b, h, q_idx, kv_idx):
+        causal_mask = q_idx >= kv_idx
+        document_mask = self.docs[b, q_idx] == self.docs[b, kv_idx]
+        return causal_mask & document_mask
+
+
 def create_block_mask_from_seqlens(seqlens: list[torch.Tensor]) -> BlockMask:
     """Creates a block mask from a list of sequence lengths.
 
@@ -181,10 +191,11 @@ def create_block_mask_from_seqlens(seqlens: list[torch.Tensor]) -> BlockMask:
     docs = seqlens_to_docs_tensor(seqlens).to("cuda")
     batch_size, max_seq_len = docs.shape
 
-    def document_causal_mask(b, h, q_idx, kv_idx):
-        causal_mask = q_idx >= kv_idx
-        document_mask = docs[b, q_idx] == docs[b, kv_idx]
-        return causal_mask & document_mask
+    # def document_causal_mask(b, h, q_idx, kv_idx):
+    #     causal_mask = q_idx >= kv_idx
+    #     document_mask = docs[b, q_idx] == docs[b, kv_idx]
+    #     return causal_mask & document_mask
+    document_causal_mask = DocumentCausalMask(docs)
 
     return create_block_mask(
         document_causal_mask,

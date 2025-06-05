@@ -354,7 +354,7 @@ class CkptManager:
 
         if self.world_info.local_rank == 0:
             if self.config.topk is not None:
-                delete_topk(self.self._logger, self.config.path, self.config.topk)
+                delete_topk(self._logger, self.config.path, self.config.topk)
 
     def _del__(self):
         self.wait_for_blocking_job()

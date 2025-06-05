@@ -166,9 +166,12 @@ class ElasticDeviceMesh:
         self._logger.debug(
             f"Creating global pg with {self.world_info.global_world_size} rank {self.world_info.global_rank}"
         )
-        self.global_pg = dist.ProcessGroupGloo(
-            prefix_store, self.world_info.global_rank, self.world_info.global_world_size, GLOBAL_PG_TIMEOUT
-        )
+        try:
+            self.global_pg = dist.ProcessGroupGloo(
+                prefix_store, self.world_info.global_rank, self.world_info.global_world_size, GLOBAL_PG_TIMEOUT
+            )
+        except:
+            raise RuntimeError("gloo process group creation error, throw back to rdzv restart. ")
         self._logger.debug("Global pg created with %d peers. Timeout of %s", self.global_pg.size(), GLOBAL_PG_TIMEOUT)
 
     def _optimize_ring_ranks(self):
@@ -537,7 +540,7 @@ class ElasticDeviceMesh:
                 return result
 
             # rdzv restart chance
-            t = threading.Thread(target=get_fn)
+            t = threading.Thread(target=get_fn, args=(i, ))
             t.start()
             t.join(10) # 10s for timeout
 
