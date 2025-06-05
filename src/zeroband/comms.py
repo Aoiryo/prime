@@ -543,6 +543,7 @@ class ElasticDeviceMesh:
 
             if t.is_alive():
                 raise RuntimeError("iperf conn out of time, probably due to failed process group creation. ")
+            target_data = result.get("value", None)
             target_host, target_port = target_data.rsplit(":", 1)
             target_port = int(target_port)
             time_taken = self.measure_bandwidth(target_host, target_port)
