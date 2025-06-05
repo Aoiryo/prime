@@ -520,10 +520,29 @@ class ElasticDeviceMesh:
             raise
 
     def _measure_connectivity(self):
+        import threading
+        import time
+
         for i in self._global_ids:
             if i == self.world_info.global_unique_id:
                 continue
-            target_data = self.god_store.get(f"iperf_{i}").decode("utf-8")
+            result = {}
+        
+            # target_data = self.god_store.get(f"iperf_{i}").decode("utf-8")
+            def get_fn(i):
+                try:
+                    result["value"] = self.god_store.get(f"iperf_{i}").decode("utf-8")
+                except Exception as e:
+                    result["e"] = e
+                return result
+
+            # rdzv restart chance
+            t = threading.Thread(target=get_fn)
+            t.start()
+            t.join(10) # 10s for timeout
+
+            if t.is_alive():
+                raise RuntimeError("iperf conn out of time, probably due to failed process group creation. ")
             target_host, target_port = target_data.rsplit(":", 1)
             target_port = int(target_port)
             time_taken = self.measure_bandwidth(target_host, target_port)
