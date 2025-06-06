@@ -22,4 +22,9 @@ inner_steps = 5
 interval = 5
 topk = 40
 path = "./data/test"
-remote_data_path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime"
+skip_dataloader = true
+
+[ckpt.remote]
+interval = 5
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime"
+
