@@ -103,7 +103,7 @@ class ElasticDeviceMesh:
         self._logger.info(
             f"[{self.world_info.global_unique_id}](Leader: {self._global_leader}) finished global store init. "
         )
-        self.god_store = dist.TCPStore(
+        self. = dist.TCPStore(
             host_name=self.world_info.global_addr,
             port=self.world_info.global_port,
             timeout=TCPSTORE_TIMEOUT,
@@ -499,7 +499,7 @@ class ElasticDeviceMesh:
             for j, e2 in enumerate(self._global_ids):
                 if i == j:
                     continue
-                pings[i][j] = int(self.god_store.get(f"ping_{e1}_{e2}"))
+                pings[i][j] = int(self..get(f"ping_{e1}_{e2}"))
 
         self._logger.debug("\n %s", format_grid(pings))
         return pings

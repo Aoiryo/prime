@@ -349,9 +349,6 @@ class CkptManager:
             subprocess.run(["hdfs", "dfs", "-mkdir", "-p", remote_root], check=False)
 
             for file in files:
-                if file == ".metadata":
-                    print(f"[rsync_hdfs] Skipping {file}")
-                    continue
 
                 local_file = os.path.join(root, file)
                 remote_file = os.path.join(remote_root, file)
@@ -379,6 +376,7 @@ class CkptManager:
             self._logger.info(
                 f"finish pushing {ckpt_path} to {remote_ckpt_path} in {time.perf_counter() - time_start} seconds"
             )
+
 
         processes = multiprocessing.Process(target=rsync, daemon=True)
         processes.start()
@@ -415,6 +413,45 @@ class CkptManager:
             state = torch.load(f)
             self.dataloader.load_state_dict(state["data_loader"])
 
+    def download_latest_step(self, hdfs_root: str, local_root: str = "./data/test"):
+        import re
+        fs = fsspec.filesystem("hdfs")
+        try:
+            dirs = fs.ls(hdfs_root, detail=True)
+        except Exception as e:
+            print(f"[Error] Cannot list HDFS path {hdfs_root}: {e}")
+            return False
+
+        # extract directories named step_x
+        step_dirs = []
+        pattern = re.compile(r"step_(\d+)$")
+        for item in dirs:
+            if item["type"] == "directory":
+                match = pattern.search(item["name"])
+                if match:
+                    step_num = int(match.group(1))
+                    step_dirs.append((step_num, item["name"]))
+
+        if not step_dirs:
+            print(f"[Info] No step_x directories found under {hdfs_root}")
+            return False
+
+        # find the latest step directory and download
+        step_dirs.sort()
+        latest_step_num, latest_step_path = step_dirs[-1]
+
+        local_dest = os.path.join(local_root, f"step_{latest_step_num}")
+        os.makedirs(local_dest, exist_ok=True)
+
+        print(f"[Info] Downloading {latest_step_path} -> {local_dest}")
+        try:
+            fs.get(latest_step_path, local_dest, recursive=True)
+            print(f"[Success] Downloaded step_{latest_step_num} checkpoint.")
+            return True, local_dest
+        except Exception as e:
+            print(f"[Error] Failed to download {latest_step_path}: {e}")
+            return False, None
+
     @torch.no_grad()
     def load(
         self,
@@ -435,6 +472,14 @@ class CkptManager:
         time_start = time.perf_counter()
 
         world_info = get_world_info()
+
+        # try to download from remote first
+        if self.config.remote is not None and self.config.remote.path is not None:
+            found, resume_path = self.download_latest_step(self.config.remote.path, local_root=resume_ckpt_path)
+            if not found:
+                print("No checkpoint to load.")
+            else:
+                resume_ckpt_path = resume_path    
 
         files = os.listdir(resume_ckpt_path)
 
