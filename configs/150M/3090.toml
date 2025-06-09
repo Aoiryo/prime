@@ -23,6 +23,7 @@ interval = 5
 topk = 40
 path = "./data/test"
 skip_dataloader = true
+resume = "./data/test/"
 
 [ckpt.remote]
 interval = 5
