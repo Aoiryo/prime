@@ -103,7 +103,7 @@ class ElasticDeviceMesh:
         self._logger.info(
             f"[{self.world_info.global_unique_id}](Leader: {self._global_leader}) finished global store init. "
         )
-        self. = dist.TCPStore(
+        self.god_store = dist.TCPStore(
             host_name=self.world_info.global_addr,
             port=self.world_info.global_port,
             timeout=TCPSTORE_TIMEOUT,
