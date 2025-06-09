@@ -317,10 +317,51 @@ class CkptManager:
 
     @staticmethod
     def save_data(data_path: str, dataloader, local_rank: int):
+        import os
+        import copy
         os.makedirs(data_path, exist_ok=True)
+
+        state = {"data_loader": copy.deepcopy(dataloader.state_dict())}
+
+        try:
+            prefetch = state["data_loader"].get("_prefetch_iterator", {})
+            batch = prefetch.get("ready_batch", {})
+            block_mask = batch.get("block_mask", None)
+            if block_mask is not None and hasattr(block_mask, "mask_mod"):
+                delattr(block_mask, "mask_mod")
+        except Exception as e:
+            print(f"Failed to clean block_mask.mask_mod: {e}")
+
         with open(os.path.join(data_path, f"_{local_rank}.pt"), "wb") as f:
-            state = {"data_loader": dataloader.state_dict()}
             torch.save(state, f)
+
+    def _rsync_hdfs(self, local_dir: str, destination: str):
+        """
+        Use `hdfs dfs -put -f` to recursively upload local_dir to destination in HDFS.
+        This approach avoids retry cache issues by overwriting existing files.
+        """
+        import subprocess
+        for root, _, files in os.walk(local_dir):
+            rel_path = os.path.relpath(root, local_dir)
+            remote_root = os.path.join(destination, rel_path).rstrip("/")
+
+            # Create remote directory (optional: HDFS may auto-create)
+            subprocess.run(["hdfs", "dfs", "-mkdir", "-p", remote_root], check=False)
+
+            for file in files:
+                if file == ".metadata":
+                    print(f"[rsync_hdfs] Skipping {file}")
+                    continue
+
+                local_file = os.path.join(root, file)
+                remote_file = os.path.join(remote_root, file)
+
+                print(f"[rsync_hdfs] Uploading {local_file} -> {remote_file}")
+                try:
+                    subprocess.run(["hdfs", "dfs", "-put", "-f", local_file, remote_file], check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"[rsync_hdfs] Failed to upload {local_file} to {remote_file}: {e}")
+
 
     def _async_save_remote(self, ckpt_path: str, remote_ckpt_path: str, blocking: bool = True) -> None:
         """asyncronously rsync a ckpt folder to a remote location. Using fsspec to handle remote cloud storage without to install
@@ -331,7 +372,8 @@ class CkptManager:
             time_start = time.perf_counter()
             self._logger.info(f"start pushing {ckpt_path} to {remote_ckpt_path} asynchronously")
             try:
-                rsync_fsspec(ckpt_path, destination=remote_ckpt_path)
+                # rsync_fsspec(ckpt_path, destination=remote_ckpt_path)
+                self._rsync_hdfs(ckpt_path, destination=remote_ckpt_path)
             except Exception as e:
                 self._logger.error(f"Error pushing {ckpt_path} to {remote_ckpt_path}: {e}")
             self._logger.info(
