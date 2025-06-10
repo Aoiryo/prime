@@ -252,7 +252,7 @@ class CkptManager:
         #     self.states["diloco_optimizer"] = self.diloco_offloaded_optimizer
 
     @torch.no_grad()
-    def save(self, remote: bool = False) -> None:
+    def save(self, remote: bool = False, group=None) -> None:
         """
         Each rank will save the right shard of the model and optimizer.
 
@@ -269,17 +269,17 @@ class CkptManager:
 
         # if we are not in self recovery mode we save to disk
         time_start = time.perf_counter()
-        self._save(step_ckpt_path)
+        self._save(step_ckpt_path, group)
         self._logger.info(f"Saved checkpoint to {step_ckpt_path} in {time.perf_counter() - time_start} seconds")
 
         # push to remote
         non_error_barrier()
-        if self.world_info.rank == 0: # only the master node push to remote
+        if self.world_info.local_rank == 0:
             if remote and self.config.remote is not None:
                 self._async_save_remote(step_ckpt_path, remote_ckpt_path)
 
     @torch.no_grad()
-    def _save(self, ckpt_path: str):
+    def _save(self, ckpt_path: str, group = None):
         self.wait_for_blocking_job()
 
         catch_warning = self._logger.getEffectiveLevel() <= logging.INFO
@@ -290,7 +290,7 @@ class CkptManager:
             if catch_warning:
                 warnings.simplefilter("ignore")
 
-            dcp.save(self.states, checkpoint_id=ckpt_path)
+            dcp.save(self.states, checkpoint_id=ckpt_path, process_group=group)
 
             if self.diloco_offloaded_optimizer:
                 with open(os.path.join(ckpt_path, f"__{self.world_info.local_rank}_0.pt"), "wb") as f:
@@ -443,9 +443,9 @@ class CkptManager:
         local_dest = os.path.join(local_root, f"step_{latest_step_num}")
         os.makedirs(local_dest, exist_ok=True)
 
-        print(f"[Info] Downloading {latest_step_path} -> {local_dest}")
+        print(f"[Info] Downloading {latest_step_path} -> {local_root}")
         try:
-            fs.get(latest_step_path, local_dest, recursive=True)
+            fs.get(latest_step_path, local_root, recursive=True)
             print(f"[Success] Downloaded step_{latest_step_num} checkpoint.")
             return True, local_dest
         except Exception as e:

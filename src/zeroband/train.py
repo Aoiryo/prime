@@ -438,7 +438,7 @@ def train(config: Config):
         if config.diloco is not None:
             assert diloco is not None
             time_start_inner = time.perf_counter()
-            diloco.step(model=model, flag=str(training_progress.outer_step))
+            diloco.step(model=model, flag=str(training_progress.outer_step), group=elastic_device_mesh.global_pg)
             diloco_time = time.perf_counter() - time_start_inner
 
             log_hash_training_state(

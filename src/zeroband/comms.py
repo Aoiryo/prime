@@ -14,6 +14,8 @@ from uuid import uuid4
 import toposolve
 from zeroband.utils.ip import parse_iperf_output
 
+from torch.distributed.distributed_c10d import _register_process_group, _unregister_process_group
+
 # from torch.distributed.elastic.rendezvous import get_rendezvous_handler
 
 TCPSTORE_TIMEOUT = timedelta(seconds=int(os.getenv("ZERO_BAND_GLOBAL_STORE_TIMEOUT_SECONDS", "300")))
@@ -146,6 +148,7 @@ class ElasticDeviceMesh:
                     f"Global PG refcount was {sys.getrefcount(self.global_pg)} when 2 is expected during deletion. This may cause a memory leak."
                 )
             del self.global_pg  # TODO(jackmin): Where do we catch errors in teardown?
+            _unregister_process_group("global_pg")
             self._logger.info("Destroyed process group")
 
         # Get new global rank and world size
@@ -170,6 +173,8 @@ class ElasticDeviceMesh:
             self.global_pg = dist.ProcessGroupGloo(
                 prefix_store, self.world_info.global_rank, self.world_info.global_world_size, GLOBAL_PG_TIMEOUT
             )
+            group_name = "global_pg"
+            _register_process_group(group_name, self.global_pg)
         except:
             raise RuntimeError("gloo process group creation error, throw back to rdzv restart. ")
         self._logger.debug("Global pg created with %d peers. Timeout of %s", self.global_pg.size(), GLOBAL_PG_TIMEOUT)
