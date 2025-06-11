@@ -274,7 +274,7 @@ class CkptManager:
 
         # push to remote
         non_error_barrier()
-        if self.world_info.local_rank == 0:
+        if self.world_info.global_rank == 0:
             if remote and self.config.remote is not None:
                 self._async_save_remote(step_ckpt_path, remote_ckpt_path)
 
@@ -289,6 +289,19 @@ class CkptManager:
             # we can ignore it if we are not logging in DEBUG mode
             if catch_warning:
                 warnings.simplefilter("ignore")
+
+            # rank = dist.get_rank(group) if group else dist.get_rank()
+            # param_list = {}
+
+            # for key, state in self.states.items():
+            #     if hasattr(state, "state_dict"):
+            #         sd = state.state_dict()
+            #         param_list[key] = list(sd.keys())
+            #         print(f"[Rank {rank}] saving {key} with {len(sd)} items:")
+            #         for k in sd:
+            #             print(f"  {k}")
+            #     else:
+            #         print(f"[Rank {rank}] {key} has no state_dict(), skipping")
 
             dcp.save(self.states, checkpoint_id=ckpt_path, process_group=group)
 
@@ -488,6 +501,26 @@ class CkptManager:
                 f"Loading diloco ckpt from {files[0]}. This is deprecated and will be removed in the future"
             )
             resume_ckpt_path = os.path.join(resume_ckpt_path, files[0])
+
+        if self.world_info.global_rank != 0:
+            distcp_files = [f for f in os.listdir(resume_ckpt_path) if f.endswith(".distcp")]
+
+            if len(distcp_files) == 1:
+                existing_file = distcp_files[0]
+                existing_path = os.path.join(resume_ckpt_path, existing_file)
+
+                base_name = existing_file.split(".distcp")[0]  # __0_0
+                parts = base_name.split("_")
+                _, local_rank_str = parts[-2], parts[-1]
+
+                new_file = f"__{self.world_info.global_rank}_{local_rank_str}.distcp"
+                new_path = os.path.join(resume_ckpt_path, new_file)
+
+                if not os.path.exists(new_path):
+                    self._logger.info(f"[Rank {self.world_info.global_rank}] Copying {existing_file} → {new_file}")
+                    shutil.copy(existing_path, new_path)
+            else:
+                self._logger.warning(f"Expected a single distcp file to duplicate, but found: {distcp_files}")
 
         dcp.load(self.states, checkpoint_id=resume_ckpt_path)
 

@@ -1,5 +1,7 @@
 import os
 import time
+import signal
+from functools import partial
 from typing import TYPE_CHECKING
 from multiprocessing.process import _children  # type: ignore
 
@@ -36,6 +38,11 @@ from zeroband.utils.stopwatch import Stopwatch
 
 from transformers import AutoTokenizer
 from pydantic_config import parse_argv
+
+
+def sigterm_handler(elastic_device_mesh):
+    print(f"[Rank {os.environ.get('RANK', '?')}] Cleaning up before shutdown...")
+    del elastic_device_mesh
 
 
 def log_hash_training_state(
@@ -77,6 +84,7 @@ def log_hash_training_state(
 
 
 def train(config: Config):
+
     # batch_size is the total batch size for all GPUs
     assert config.optim.batch_size % world_info.local_world_size == 0
     batch_size = config.optim.batch_size // world_info.local_world_size
@@ -148,6 +156,9 @@ def train(config: Config):
         elastic_device_mesh.cpu_local_mesh = elastic_device_mesh.mesh["intranode"]
         elastic_device_mesh.cpu_local_mesh._dim_group_infos = []
         elastic_device_mesh.cpu_local_mesh._dim_group_infos.append(elastic_device_mesh.mesh._dim_group_infos[-1])
+        
+        # signal.signal(signal.SIGTERM, partial(lambda edm, signum, frame: sigterm_handler(edm), elastic_device_mesh))
+        
         # from ipdb import set_trace; set_trace()
         mp_policy = MixedPrecisionPolicy(
             param_dtype=torch.bfloat16, reduce_dtype=torch.float32 if config.train.reduce_fp32 else None
@@ -438,7 +449,7 @@ def train(config: Config):
         if config.diloco is not None:
             assert diloco is not None
             time_start_inner = time.perf_counter()
-            diloco.step(model=model, flag=str(training_progress.outer_step), group=elastic_device_mesh.global_pg)
+            diloco.step(model=model, flag=str(training_progress.outer_step))
             diloco_time = time.perf_counter() - time_start_inner
 
             log_hash_training_state(
@@ -455,7 +466,7 @@ def train(config: Config):
             # we only allow to checkpoint after a outer step. For non diloco training outer step = 1 anyway
 
             do_remote = config.ckpt.remote is not None and training_progress.step % config.ckpt.remote.interval == 0
-            ckpt_manager.save(remote=do_remote)
+            ckpt_manager.save(remote=do_remote, group=elastic_device_mesh.global_pg)
             log_hash_training_state(
                 config, model, inner_optimizer, diloco, metric_logger, step=training_progress.step, id="save"
             )

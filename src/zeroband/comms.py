@@ -61,12 +61,42 @@ class ElasticDeviceMesh:
         # Initialize global process group
         self.global_pg = FakeProcessGroup(self.world_info.rank, 1)
 
+        # Initialize local process group
+        # print(f"{self.world_info.rank} thinks the world size is ", os.environ["WORLD_SIZE"], os.environ["MASTER_ADDR"], os.environ["MASTER_PORT"])
+        # dist.init_process_group(backend=backend)
+        # print("and then passed the init pg!")
+
+        import threading
+        def _init_pg(backend, init_kwargs, result_holder):
+            try:
+                dist.init_process_group(backend=backend, **init_kwargs)
+                result_holder["success"] = True
+            except Exception as e:
+                result_holder["error"] = e
+
+        def safe_init_process_group(backend, timeout_sec=10, **init_kwargs):
+            result = {"success": False, "error": None}
+            thread = threading.Thread(target=_init_pg, args=(backend, init_kwargs, result))
+            thread.start()
+            thread.join(timeout=timeout_sec)
+
+            if thread.is_alive():
+                print(f"[PG] Timeout after {timeout_sec}s. Force exit.")
+                os._exit(1)
+            if result["error"]:
+                raise RuntimeError(f"init_process_group() failed: {result['error']}")
+
+            print("[PG] Successfully initialized.")
+
+        safe_init_process_group(
+            backend=backend,
+            timeout_sec=10,
+        )
+
         self.enable = enable
         if enable:
             self._init_global_pg()
-
-        # Initialize local process group
-        dist.init_process_group(backend=backend)
+        
         self.mesh = init_device_mesh(
             "cuda",
             (self.world_info.nnodes, self.world_info.local_world_size),
@@ -148,7 +178,6 @@ class ElasticDeviceMesh:
                     f"Global PG refcount was {sys.getrefcount(self.global_pg)} when 2 is expected during deletion. This may cause a memory leak."
                 )
             del self.global_pg  # TODO(jackmin): Where do we catch errors in teardown?
-            _unregister_process_group("global_pg")
             self._logger.info("Destroyed process group")
 
         # Get new global rank and world size
@@ -170,11 +199,15 @@ class ElasticDeviceMesh:
             f"Creating global pg with {self.world_info.global_world_size} rank {self.world_info.global_rank}"
         )
         try:
-            self.global_pg = dist.ProcessGroupGloo(
-                prefix_store, self.world_info.global_rank, self.world_info.global_world_size, GLOBAL_PG_TIMEOUT
+            # self.global_pg = dist.ProcessGroupGloo(
+            #     prefix_store, self.world_info.global_rank, self.world_info.global_world_size, GLOBAL_PG_TIMEOUT
+            # )
+            ranks = list(range(self.world_info.global_world_size))
+            self.global_pg = dist.new_group(
+                ranks=ranks,
+                backend="gloo", 
+                timeout=GLOBAL_PG_TIMEOUT
             )
-            group_name = "global_pg"
-            _register_process_group(group_name, self.global_pg)
         except:
             raise RuntimeError("gloo process group creation error, throw back to rdzv restart. ")
         self._logger.debug("Global pg created with %d peers. Timeout of %s", self.global_pg.size(), GLOBAL_PG_TIMEOUT)
@@ -448,7 +481,7 @@ class ElasticDeviceMesh:
             self._clear_joiners()
             self.global_store.set("status", "running")
 
-        self._logger.debug("Reinitialized global_pg done in %s seconds", time.perf_counter() - time_start)
+        self._logger.info("Reinitialized global_pg done in %s seconds", time.perf_counter() - time_start)
 
         # TODO: We need to reset the self.world_info.global_rank reference
         # Somehow the reference becomes stale and the heartbeats become wrong
