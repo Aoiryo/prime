@@ -274,7 +274,7 @@ class CkptManager:
 
         # push to remote
         non_error_barrier()
-        if self.world_info.global_rank == 0:
+        if self.world_info.rank == 0:
             if remote and self.config.remote is not None:
                 self._async_save_remote(step_ckpt_path, remote_ckpt_path)
 
@@ -457,6 +457,11 @@ class CkptManager:
         os.makedirs(local_dest, exist_ok=True)
 
         print(f"[Info] Downloading {latest_step_path} -> {local_root}")
+        
+        world_info = get_world_info()
+        if world_info.local_rank != 0:
+            return True, local_dest
+
         try:
             fs.get(latest_step_path, local_root, recursive=True)
             print(f"[Success] Downloaded step_{latest_step_num} checkpoint.")

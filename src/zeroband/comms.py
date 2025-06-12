@@ -199,11 +199,11 @@ class ElasticDeviceMesh:
             f"Creating global pg with {self.world_info.global_world_size} rank {self.world_info.global_rank}"
         )
         try:
-            # self.global_pg = dist.ProcessGroupGloo(
-            #     prefix_store, self.world_info.global_rank, self.world_info.global_world_size, GLOBAL_PG_TIMEOUT
-            # )
-            ranks = list(range(self.world_info.global_world_size))
-            self.global_pg = dist.new_group(
+            self.global_pg = dist.ProcessGroupGloo(
+                prefix_store, self.world_info.global_rank, self.world_info.global_world_size, GLOBAL_PG_TIMEOUT
+            )
+            ranks = list(range(self.world_info.local_world_size)) # only the ranks from the first node attend ckpt
+            self.ckpt_pg = dist.new_group(
                 ranks=ranks,
                 backend="gloo", 
                 timeout=GLOBAL_PG_TIMEOUT

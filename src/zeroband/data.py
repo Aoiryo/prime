@@ -399,6 +399,7 @@ def get_dataloader(
     rank: int,
     batch_size: int,
     data_config: DataConfig,
+    worker_init_fn=None,
 ) -> StatefulDataLoader:
     if data_config.fake:
         train_dataset = FakeTokenizedDataset(data_config.seq_length, TEST_VOCAB_SIZE)
@@ -413,6 +414,7 @@ def get_dataloader(
         batch_size=batch_size,
         collate_fn=collate_fn,
         num_workers=data_config.num_workers,
+        worker_init_fn=worker_init_fn,
     )
     return PrefetchDataLoader(mp_batch_dataloader, data_config)
 

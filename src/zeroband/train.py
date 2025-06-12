@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import signal
 from functools import partial
@@ -40,10 +41,10 @@ from transformers import AutoTokenizer
 from pydantic_config import parse_argv
 
 
-def sigterm_handler(elastic_device_mesh):
-    print(f"[Rank {os.environ.get('RANK', '?')}] Cleaning up before shutdown...")
-    del elastic_device_mesh
-
+def sigterm_handler(signum, frame):
+    print(f"[Rank {os.environ.get('RANK', '?')}] Returning exit code 1...")
+    sys.exit(1)
+    
 
 def log_hash_training_state(
     config: Config,
@@ -84,6 +85,8 @@ def log_hash_training_state(
 
 
 def train(config: Config):
+
+    signal.signal(signal.SIGTERM, sigterm_handler)
 
     # batch_size is the total batch size for all GPUs
     assert config.optim.batch_size % world_info.local_world_size == 0
@@ -466,7 +469,7 @@ def train(config: Config):
             # we only allow to checkpoint after a outer step. For non diloco training outer step = 1 anyway
 
             do_remote = config.ckpt.remote is not None and training_progress.step % config.ckpt.remote.interval == 0
-            ckpt_manager.save(remote=do_remote, group=elastic_device_mesh.global_pg)
+            ckpt_manager.save(remote=do_remote, group=elastic_device_mesh.ckpt_pg)
             log_hash_training_state(
                 config, model, inner_optimizer, diloco, metric_logger, step=training_progress.step, id="save"
             )
