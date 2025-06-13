@@ -232,17 +232,17 @@ def train(config: Config):
             # we need to compile AFTER creating the CKPT manager, DON'T ASK ME WHY
             model = torch.compile(model) if not TYPE_CHECKING else model
 
-    if config.ckpt.resume is not None:
-        with sw.record_block("Resume Checkpoint"):
-            # all is inplace
-            ckpt_manager.load(
-                resume_ckpt_path=config.ckpt.resume,
-                skip_dataloader=config.ckpt.skip_dataloader,
-                data_path=config.ckpt.data_path,
-            )
-            log_hash_training_state(
-                config, model, inner_optimizer, diloco, metric_logger, step=training_progress.step, id="resume"
-            )
+    # if config.ckpt.resume is not None:
+    #     with sw.record_block("Resume Checkpoint"):
+    #         # all is inplace
+    #         ckpt_manager.load(
+    #             resume_ckpt_path=config.ckpt.resume,
+    #             skip_dataloader=config.ckpt.skip_dataloader,
+    #             data_path=config.ckpt.data_path,
+    #         )
+    #         log_hash_training_state(
+    #             config, model, inner_optimizer, diloco, metric_logger, step=training_progress.step, id="resume"
+    #         )
 
     if config.train.memory_profiler is not None:
         memory_profiler = MemoryProfiler(config.train.memory_profiler.freq, config.train.memory_profiler.snapshot_dir)
@@ -270,9 +270,14 @@ def train(config: Config):
                 maybe_dest_rank = elastic_device_mesh.live_recovery.should_send_ckpt_to()
                 if maybe_dest_rank is not None:
                     logger.info(f"Start live recovery to rank {maybe_dest_rank}")
-                    ckpt_manager.send_ckpt_to_peer(elastic_device_mesh.global_pg, maybe_dest_rank, blocking=True)
+                #     ckpt_manager.send_ckpt_to_peer(elastic_device_mesh.global_pg, maybe_dest_rank, blocking=True)
+
+                    # TODO: block until the worker loads ckpt successfully
+                    elastic_device_mesh.global_store.get("live_recovery_loaded")
 
                     elastic_device_mesh.live_recovery.reset()
+                    elastic_device_mesh.global_store.delete_key("live_recovery_loaded")
+
             else:
                 ## receiving
                 time_start_live_recovery = time.perf_counter()
@@ -282,7 +287,20 @@ def train(config: Config):
 
                 diloco.outer_optimizer.step()  # need to step to init the DTensor stats
 
-                ckpt_manager.recv_ckpt_from_peer(elastic_device_mesh.global_pg)
+                # ckpt_manager.recv_ckpt_from_peer(elastic_device_mesh.global_pg)
+
+                # TODO: 1. make sure that the upload is successful and atomic
+                time.sleep(15)
+                
+                # TODO: 2. use ckpt.load to resume
+                if config.ckpt.resume:
+                    ckpt_manager.load(
+                        resume_ckpt_path=config.ckpt.resume,
+                        skip_dataloader=config.ckpt.skip_dataloader,
+                        data_path=config.ckpt.data_path,
+                    )
+                # TODO: 3: tell the master to be free
+                elastic_device_mesh.global_store.set("live_recovery_loaded", "success")
 
                 log_hash_training_state(
                     config,

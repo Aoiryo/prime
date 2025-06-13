@@ -451,6 +451,8 @@ class ElasticDeviceMesh:
             # no op if disabled
             return
 
+        # from ipdb import set_trace; set_trace()
+
         time_start = time.perf_counter()
         self._logger.debug("[%s] Resolving world", self.world_info.global_unique_id)
         if self._global_leader:
@@ -504,10 +506,12 @@ class ElasticDeviceMesh:
         self._logger.debug("[%s] Monitored Barrier %s", self.world_info.global_unique_id, flag)
         if self._global_leader:
             self._logger.debug("Others have %d seconds to resolve", GLOBAL_PG_TIMEOUT.total_seconds())
+            print("world size:", self.world_info.global_world_size)
             while not all(
                 self.global_store.get(f"barrier_{i}").decode("utf-8") == flag
                 for i in range(1, self.world_info.global_world_size)
             ):
+
                 if time.perf_counter() - time_start > GLOBAL_PG_TIMEOUT.total_seconds():
                     self._logger.error("Monitored barrier failed due to timeout")
                     self._evicted_nodes = [
