@@ -274,7 +274,7 @@ class CkptManager:
 
         # push to remote
         non_error_barrier()
-        if self.world_info.rank == 0:
+        if self.world_info.global_unique_id == "master":
             if remote and self.config.remote is not None:
                 self._async_save_remote(step_ckpt_path, remote_ckpt_path)
 
