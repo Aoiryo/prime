@@ -252,7 +252,7 @@ class CkptManager:
         #     self.states["diloco_optimizer"] = self.diloco_offloaded_optimizer
 
     @torch.no_grad()
-    def save(self, remote: bool = False, group=None) -> None:
+    def save(self, remote: bool = False, group=None, store=None) -> None:
         """
         Each rank will save the right shard of the model and optimizer.
 
@@ -276,7 +276,7 @@ class CkptManager:
         non_error_barrier()
         if self.world_info.global_unique_id == "master":
             if remote and self.config.remote is not None:
-                self._async_save_remote(step_ckpt_path, remote_ckpt_path)
+                self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store)
 
     @torch.no_grad()
     def _save(self, ckpt_path: str, group = None):
@@ -373,7 +373,7 @@ class CkptManager:
                     print(f"[rsync_hdfs] Failed to upload {local_file} to {remote_file}: {e}")
 
 
-    def _async_save_remote(self, ckpt_path: str, remote_ckpt_path: str, blocking: bool = True) -> None:
+    def _async_save_remote(self, ckpt_path: str, remote_ckpt_path: str, blocking: bool = True, store = None) -> None:
         """asyncronously rsync a ckpt folder to a remote location. Using fsspec to handle remote cloud storage without to install
         specific libraries (e.g. s3fs).
         """
@@ -381,14 +381,21 @@ class CkptManager:
         def rsync():
             time_start = time.perf_counter()
             self._logger.info(f"start pushing {ckpt_path} to {remote_ckpt_path} asynchronously")
+            if store is not None:
+                store.set("upload_successful", "uploading")
             try:
                 # rsync_fsspec(ckpt_path, destination=remote_ckpt_path)
                 self._rsync_hdfs(ckpt_path, destination=remote_ckpt_path)
             except Exception as e:
                 self._logger.error(f"Error pushing {ckpt_path} to {remote_ckpt_path}: {e}")
             self._logger.info(
-                f"finish pushing {ckpt_path} to {remote_ckpt_path} in {time.perf_counter() - time_start} seconds"
+                f"finished pushing {ckpt_path} to {remote_ckpt_path} in {time.perf_counter() - time_start} seconds"
             )
+            if store is not None:
+                print("setting the store...")
+                store.set("upload_successful", "stable")
+            else:
+                print("the store is None!!!!")
 
 
         processes = multiprocessing.Process(target=rsync, daemon=True)

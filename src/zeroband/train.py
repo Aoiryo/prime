@@ -290,10 +290,18 @@ def train(config: Config):
                 # ckpt_manager.recv_ckpt_from_peer(elastic_device_mesh.global_pg)
 
                 # TODO: 1. make sure that the upload is successful and atomic
-                time.sleep(15)
+                # time.sleep(15)
+                # this is done through tcp store get blocking
                 
                 # TODO: 2. use ckpt.load to resume
                 if config.ckpt.resume:
+                    while True:
+                        upload_status = elastic_device_mesh.global_store.get("upload_successful").decode("utf-8")
+                        if upload_status == "stable":
+                            break
+                        else:
+                            logger.info(f"upload status: {upload_status}")
+                            time.sleep(5)
                     ckpt_manager.load(
                         resume_ckpt_path=config.ckpt.resume,
                         skip_dataloader=config.ckpt.skip_dataloader,
@@ -487,7 +495,7 @@ def train(config: Config):
             # we only allow to checkpoint after a outer step. For non diloco training outer step = 1 anyway
 
             do_remote = config.ckpt.remote is not None and training_progress.step % config.ckpt.remote.interval == 0
-            ckpt_manager.save(remote=do_remote, group=elastic_device_mesh.ckpt_pg)
+            ckpt_manager.save(remote=do_remote, group=elastic_device_mesh.ckpt_pg, store=elastic_device_mesh.global_store)
             log_hash_training_state(
                 config, model, inner_optimizer, diloco, metric_logger, step=training_progress.step, id="save"
             )
