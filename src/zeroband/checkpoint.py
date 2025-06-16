@@ -252,7 +252,7 @@ class CkptManager:
         #     self.states["diloco_optimizer"] = self.diloco_offloaded_optimizer
 
     @torch.no_grad()
-    def save(self, remote: bool = False) -> None:
+    def save(self, remote: bool = False, group=None) -> None:
         """
         Each rank will save the right shard of the model and optimizer.
 
@@ -269,17 +269,17 @@ class CkptManager:
 
         # if we are not in self recovery mode we save to disk
         time_start = time.perf_counter()
-        self._save(step_ckpt_path)
+        self._save(step_ckpt_path, group)
         self._logger.info(f"Saved checkpoint to {step_ckpt_path} in {time.perf_counter() - time_start} seconds")
 
         # push to remote
         non_error_barrier()
-        if self.world_info.local_rank == 0:
+        if self.world_info.rank == 0:
             if remote and self.config.remote is not None:
                 self._async_save_remote(step_ckpt_path, remote_ckpt_path)
 
     @torch.no_grad()
-    def _save(self, ckpt_path: str):
+    def _save(self, ckpt_path: str, group = None):
         self.wait_for_blocking_job()
 
         catch_warning = self._logger.getEffectiveLevel() <= logging.INFO
@@ -290,7 +290,20 @@ class CkptManager:
             if catch_warning:
                 warnings.simplefilter("ignore")
 
-            dcp.save(self.states, checkpoint_id=ckpt_path)
+            # rank = dist.get_rank(group) if group else dist.get_rank()
+            # param_list = {}
+
+            # for key, state in self.states.items():
+            #     if hasattr(state, "state_dict"):
+            #         sd = state.state_dict()
+            #         param_list[key] = list(sd.keys())
+            #         print(f"[Rank {rank}] saving {key} with {len(sd)} items:")
+            #         for k in sd:
+            #             print(f"  {k}")
+            #     else:
+            #         print(f"[Rank {rank}] {key} has no state_dict(), skipping")
+
+            dcp.save(self.states, checkpoint_id=ckpt_path, process_group=group)
 
             if self.diloco_offloaded_optimizer:
                 with open(os.path.join(ckpt_path, f"__{self.world_info.local_rank}_0.pt"), "wb") as f:
@@ -317,10 +330,48 @@ class CkptManager:
 
     @staticmethod
     def save_data(data_path: str, dataloader, local_rank: int):
+        import os
+        import copy
         os.makedirs(data_path, exist_ok=True)
+
+        state = {"data_loader": copy.deepcopy(dataloader.state_dict())}
+
+        try:
+            prefetch = state["data_loader"].get("_prefetch_iterator", {})
+            batch = prefetch.get("ready_batch", {})
+            block_mask = batch.get("block_mask", None)
+            if block_mask is not None and hasattr(block_mask, "mask_mod"):
+                delattr(block_mask, "mask_mod")
+        except Exception as e:
+            print(f"Failed to clean block_mask.mask_mod: {e}")
+
         with open(os.path.join(data_path, f"_{local_rank}.pt"), "wb") as f:
-            state = {"data_loader": dataloader.state_dict()}
             torch.save(state, f)
+
+    def _rsync_hdfs(self, local_dir: str, destination: str):
+        """
+        Use `hdfs dfs -put -f` to recursively upload local_dir to destination in HDFS.
+        This approach avoids retry cache issues by overwriting existing files.
+        """
+        import subprocess
+        for root, _, files in os.walk(local_dir):
+            rel_path = os.path.relpath(root, local_dir)
+            remote_root = os.path.join(destination, rel_path).rstrip("/")
+
+            # Create remote directory (optional: HDFS may auto-create)
+            subprocess.run(["hdfs", "dfs", "-mkdir", "-p", remote_root], check=False)
+
+            for file in files:
+
+                local_file = os.path.join(root, file)
+                remote_file = os.path.join(remote_root, file)
+
+                print(f"[rsync_hdfs] Uploading {local_file} -> {remote_file}")
+                try:
+                    subprocess.run(["hdfs", "dfs", "-put", "-f", local_file, remote_file], check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"[rsync_hdfs] Failed to upload {local_file} to {remote_file}: {e}")
+
 
     def _async_save_remote(self, ckpt_path: str, remote_ckpt_path: str, blocking: bool = True) -> None:
         """asyncronously rsync a ckpt folder to a remote location. Using fsspec to handle remote cloud storage without to install
@@ -331,12 +382,14 @@ class CkptManager:
             time_start = time.perf_counter()
             self._logger.info(f"start pushing {ckpt_path} to {remote_ckpt_path} asynchronously")
             try:
-                rsync_fsspec(ckpt_path, destination=remote_ckpt_path)
+                # rsync_fsspec(ckpt_path, destination=remote_ckpt_path)
+                self._rsync_hdfs(ckpt_path, destination=remote_ckpt_path)
             except Exception as e:
                 self._logger.error(f"Error pushing {ckpt_path} to {remote_ckpt_path}: {e}")
             self._logger.info(
                 f"finish pushing {ckpt_path} to {remote_ckpt_path} in {time.perf_counter() - time_start} seconds"
             )
+
 
         processes = multiprocessing.Process(target=rsync, daemon=True)
         processes.start()
@@ -354,7 +407,7 @@ class CkptManager:
 
         if self.world_info.local_rank == 0:
             if self.config.topk is not None:
-                delete_topk(self.logger, self.config.path, self.config.topk)
+                delete_topk(self._logger, self.config.path, self.config.topk)
 
     def _del__(self):
         self.wait_for_blocking_job()
@@ -372,6 +425,50 @@ class CkptManager:
         with open(os.path.join(data_path, f"_{world_info.local_rank}.pt"), "rb") as f:
             state = torch.load(f)
             self.dataloader.load_state_dict(state["data_loader"])
+
+    def download_latest_step(self, hdfs_root: str, local_root: str = "./data/test"):
+        import re
+        fs = fsspec.filesystem("hdfs")
+        try:
+            dirs = fs.ls(hdfs_root, detail=True)
+        except Exception as e:
+            print(f"[Error] Cannot list HDFS path {hdfs_root}: {e}")
+            return False
+
+        # extract directories named step_x
+        step_dirs = []
+        pattern = re.compile(r"step_(\d+)$")
+        for item in dirs:
+            if item["type"] == "directory":
+                match = pattern.search(item["name"])
+                if match:
+                    step_num = int(match.group(1))
+                    step_dirs.append((step_num, item["name"]))
+
+        if not step_dirs:
+            print(f"[Info] No step_x directories found under {hdfs_root}")
+            return False
+
+        # find the latest step directory and download
+        step_dirs.sort()
+        latest_step_num, latest_step_path = step_dirs[-1]
+
+        local_dest = os.path.join(local_root, f"step_{latest_step_num}")
+        os.makedirs(local_dest, exist_ok=True)
+
+        print(f"[Info] Downloading {latest_step_path} -> {local_root}")
+        
+        world_info = get_world_info()
+        if world_info.local_rank != 0:
+            return True, local_dest
+
+        try:
+            fs.get(latest_step_path, local_root, recursive=True)
+            print(f"[Success] Downloaded step_{latest_step_num} checkpoint.")
+            return True, local_dest
+        except Exception as e:
+            print(f"[Error] Failed to download {latest_step_path}: {e}")
+            return False, None
 
     @torch.no_grad()
     def load(
@@ -394,6 +491,14 @@ class CkptManager:
 
         world_info = get_world_info()
 
+        # try to download from remote first
+        if self.config.remote is not None and self.config.remote.path is not None:
+            found, resume_path = self.download_latest_step(self.config.remote.path, local_root=resume_ckpt_path)
+            if not found:
+                print("No checkpoint to load.")
+            else:
+                resume_ckpt_path = resume_path    
+
         files = os.listdir(resume_ckpt_path)
 
         if len(files) == 1 and files[0].startswith("diloco_"):
@@ -401,6 +506,26 @@ class CkptManager:
                 f"Loading diloco ckpt from {files[0]}. This is deprecated and will be removed in the future"
             )
             resume_ckpt_path = os.path.join(resume_ckpt_path, files[0])
+
+        if self.world_info.global_rank != 0:
+            distcp_files = [f for f in os.listdir(resume_ckpt_path) if f.endswith(".distcp")]
+
+            if len(distcp_files) == 1:
+                existing_file = distcp_files[0]
+                existing_path = os.path.join(resume_ckpt_path, existing_file)
+
+                base_name = existing_file.split(".distcp")[0]  # __0_0
+                parts = base_name.split("_")
+                _, local_rank_str = parts[-2], parts[-1]
+
+                new_file = f"__{self.world_info.global_rank}_{local_rank_str}.distcp"
+                new_path = os.path.join(resume_ckpt_path, new_file)
+
+                if not os.path.exists(new_path):
+                    self._logger.info(f"[Rank {self.world_info.global_rank}] Copying {existing_file} → {new_file}")
+                    shutil.copy(existing_path, new_path)
+            else:
+                self._logger.warning(f"Expected a single distcp file to duplicate, but found: {distcp_files}")
 
         dcp.load(self.states, checkpoint_id=resume_ckpt_path)
 
