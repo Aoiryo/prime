@@ -261,7 +261,7 @@ class CkptManager:
         """
         try:
             result = subprocess.run(
-                ["hdfs", "dfs", "-ls", remote_base],
+                ["hdfs", "dfs", "-ls", remote_path],
                 capture_output=True,
                 text=True,
                 check=True
@@ -302,7 +302,8 @@ class CkptManager:
 
         step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step}")
 
-        self.remote_path_cleanup(self.config.remote.path, self.config.topk)
+        if self.world_info.global_unique_id == "master":
+            self.remote_path_cleanup(self.config.remote.path, self.config.topk)
 
         if remote and self.config.remote is not None:
             remote_ckpt_path = os.path.join(self.config.remote.path, f"step_{self.training_progress.step}")
