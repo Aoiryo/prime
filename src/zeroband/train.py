@@ -86,7 +86,7 @@ def log_hash_training_state(
 
 def train(config: Config):
 
-    signal.signal(signal.SIGTERM, sigterm_handler)
+    # signal.signal(signal.SIGTERM, sigterm_handler)
 
     # batch_size is the total batch size for all GPUs
     assert config.optim.batch_size % world_info.local_world_size == 0

@@ -252,6 +252,41 @@ class CkptManager:
         #     self.states["diloco_optimizer"] = self.diloco_offloaded_optimizer
 
     @torch.no_grad()
+    def remote_path_cleanup(self, remote_path, topk):
+        """
+        Clean up old checkpoints on HDFS.
+        """
+        try:
+            result = subprocess.run(
+                ["hdfs", "dfs", "-ls", remote_base],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            lines = result.stdout.strip().split("\n")
+            step_dirs = []
+
+            for line in lines:
+                parts = line.strip().split()
+                if len(parts) < 8:
+                    continue
+                path = parts[-1]
+                match = re.search(r"step_(\d+)$", path)
+                if match:
+                    step_dirs.append((int(match.group(1)), path))
+
+            step_dirs.sort()
+
+            if len(step_dirs) > topk:
+                to_delete = step_dirs[:len(step_dirs) - topk]
+                for step, path in to_delete:
+                    print(f"[remote cleanup] Deleting old checkpoint: {path}")
+                    subprocess.run(["hdfs", "dfs", "-rm", "-r", path], check=False)
+
+        except subprocess.CalledProcessError as e:
+            print(f"[remote cleanup] Failed to list or delete checkpoints from HDFS: {e}")
+
+    @torch.no_grad()
     def save(self, remote: bool = False, group=None, store=None) -> None:
         """
         Each rank will save the right shard of the model and optimizer.
@@ -263,6 +298,8 @@ class CkptManager:
         """
 
         step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step}")
+
+        self.remote_path_cleanup(self.config.remote.path, self.config.topk)
 
         if remote and self.config.remote is not None:
             remote_ckpt_path = os.path.join(self.config.remote.path, f"step_{self.training_progress.step}")

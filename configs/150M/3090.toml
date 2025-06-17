@@ -1,6 +1,8 @@
 name_model = "150M"
 project = "debug_150m_zero_band"
 type_model = "llama2"
+run_name = "later_join_50_9868"
+wandb_resume = true
 
 [train]
 micro_bs = 16 # change this base on the gpu
@@ -9,17 +11,17 @@ reshard_after_forward = false
 [optim]
 batch_size = 512
 warmup_steps = 1000
-total_steps = 88_000
+total_steps = 10_000
 
 
 [optim.optim]
 lr = 4e-4
 
 [diloco]
-inner_steps = 10
+inner_steps = 50
 
 [ckpt]
-interval = 10
+interval = 50
 topk = 40
 path = "./data/test"
 skip_dataloader = true
@@ -27,5 +29,5 @@ resume = "./data/test"
 live_recovery_rank_src = 0
 
 [ckpt.remote]
-interval = 10
+interval = 50
 path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime"
