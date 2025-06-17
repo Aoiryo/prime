@@ -302,7 +302,7 @@ class CkptManager:
 
         step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step}")
 
-        if self.world_info.global_unique_id == "master":
+        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
             self.remote_path_cleanup(self.config.remote.path, self.config.topk)
 
         if remote and self.config.remote is not None:
@@ -315,7 +315,7 @@ class CkptManager:
 
         # push to remote
         non_error_barrier()
-        if self.world_info.global_unique_id == "master":
+        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
             if remote and self.config.remote is not None:
                 self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store)
 
