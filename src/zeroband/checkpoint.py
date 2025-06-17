@@ -42,6 +42,9 @@ from zeroband.utils.world_info import get_world_info
 
 ## code inspired by torchtitan https://github.com/pytorch/torchtitan/blob/main/torchtitan/checkpoint.py
 
+import subprocess
+import re
+
 
 @dataclass
 class TrainingProgress(Stateful):
