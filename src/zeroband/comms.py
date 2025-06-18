@@ -584,7 +584,7 @@ class ElasticDeviceMesh:
             # rdzv restart chance
             t = threading.Thread(target=get_fn, args=(i, ))
             t.start()
-            t.join(10) # 10s for timeout
+            t.join(300) # 300s for timeout
 
             if t.is_alive():
                 raise RuntimeError("iperf conn out of time, probably due to failed process group creation. ")
