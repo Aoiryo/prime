@@ -568,7 +568,9 @@ class ElasticDeviceMesh:
         for i in self._global_ids:
             if i == self.world_info.global_unique_id:
                 continue
-            target_host, target_port = self.god_store.get(f"iperf_{i}").decode("utf-8").split(":")
+            # target_host, target_port = self.god_store.get(f"iperf_{i}").decode("utf-8").split(":")
+            result = self.god_store.get(f"iperf_{i}").decode("utf-8")
+            target_host, target_port = result.rsplit(":", 1)
             target_port = int(target_port)
             time_taken = self.measure_bandwidth(target_host, target_port)
             self.god_store.set(f"ping_{self.world_info.global_unique_id}_{i}", str(time_taken))

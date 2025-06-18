@@ -2,7 +2,7 @@ name_model = "150M"
 project = "debug_150m_zero_band"
 type_model = "llama2"
 run_name = "later_join_50_9868"
-wandb_resume = true
+wandb_resume = false
 
 [train]
 micro_bs = 16 # change this base on the gpu
@@ -21,7 +21,11 @@ lr = 4e-4
 inner_steps = 50
 
 [ckpt]
-interval = 10000
+interval = 50
 topk = 40
 path = "./data/test"
 skip_dataloader = true
+
+[ckpt.remote]
+interval = 50
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime"
