@@ -90,7 +90,7 @@ class ElasticDeviceMesh:
 
         safe_init_process_group(
             backend=backend,
-            timeout_sec=30,
+            timeout_sec=300,
         )
 
         self.enable = enable
