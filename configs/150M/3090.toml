@@ -1,7 +1,7 @@
 name_model = "150M"
 project = "debug_150m_zero_band"
 type_model = "llama2"
-run_name = "later_join_50_9868"
+run_name = "later_join_50_9869"
 wandb_resume = false
 
 [train]
