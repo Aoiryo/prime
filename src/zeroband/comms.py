@@ -139,7 +139,7 @@ class ElasticDeviceMesh:
             host_name=self.world_info.global_addr,
             port=self.world_info.global_port,
             timeout=TCPSTORE_TIMEOUT,
-            is_master=(self.world_info.rank == 0),
+            is_master=(self.world_info.global_unique_id == "master" and self.world_info.rank == 0),
         )
         self._logger.info(
             f"[{self.world_info.global_unique_id}](Leader: {self._global_leader}) finished god store init. "
