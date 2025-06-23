@@ -62,36 +62,36 @@ class ElasticDeviceMesh:
         self.global_pg = FakeProcessGroup(self.world_info.rank, 1)
 
         # Initialize local process group
-        # print(f"{self.world_info.rank} thinks the world size is ", os.environ["WORLD_SIZE"], os.environ["MASTER_ADDR"], os.environ["MASTER_PORT"])
-        # dist.init_process_group(backend=backend)
-        # print("and then passed the init pg!")
+        print(f"{self.world_info.rank} thinks the world size is ", os.environ["WORLD_SIZE"], os.environ["MASTER_ADDR"], os.environ["MASTER_PORT"])
+        dist.init_process_group(backend=backend)
+        print("and then passed the init pg!")
 
-        import threading
-        def _init_pg(backend, init_kwargs, result_holder):
-            try:
-                dist.init_process_group(backend=backend, **init_kwargs)
-                result_holder["success"] = True
-            except Exception as e:
-                result_holder["error"] = e
+        # import threading
+        # def _init_pg(backend, init_kwargs, result_holder):
+        #     try:
+        #         dist.init_process_group(backend=backend, **init_kwargs)
+        #         result_holder["success"] = True
+        #     except Exception as e:
+        #         result_holder["error"] = e
 
-        def safe_init_process_group(backend, timeout_sec=10, **init_kwargs):
-            result = {"success": False, "error": None}
-            thread = threading.Thread(target=_init_pg, args=(backend, init_kwargs, result))
-            thread.start()
-            thread.join(timeout=timeout_sec)
+        # def safe_init_process_group(backend, timeout_sec=10, **init_kwargs):
+        #     result = {"success": False, "error": None}
+        #     thread = threading.Thread(target=_init_pg, args=(backend, init_kwargs, result))
+        #     thread.start()
+        #     thread.join(timeout=timeout_sec)
 
-            if thread.is_alive():
-                print(f"[PG] Timeout after {timeout_sec}s. Force exit.")
-                os._exit(1)
-            if result["error"]:
-                raise RuntimeError(f"init_process_group() failed: {result['error']}")
+        #     if thread.is_alive():
+        #         print(f"[PG] Timeout after {timeout_sec}s. Force exit.")
+        #         os._exit(1)
+        #     if result["error"]:
+        #         raise RuntimeError(f"init_process_group() failed: {result['error']}")
 
-            print("[PG] Successfully initialized.")
+        #     print("[PG] Successfully initialized.")
 
-        safe_init_process_group(
-            backend=backend,
-            timeout_sec=300,
-        )
+        # safe_init_process_group(
+        #     backend=backend,
+        #     timeout_sec=300,
+        # )
 
         self.enable = enable
         if enable:
@@ -111,7 +111,7 @@ class ElasticDeviceMesh:
 
         # Logging
         if self.enable:
-            self._optimize_ring_ranks()
+            # self._optimize_ring_ranks()
             if self.live_recovery_rank_src is not None:
                 self.live_recovery.ask_for_live_ckpt(self.live_recovery_rank_src)
             self.global_pg.barrier().wait()
@@ -473,7 +473,7 @@ class ElasticDeviceMesh:
         # Reinit Path
         try:
             self._create_global_pg()
-            self._optimize_ring_ranks()
+            # self._optimize_ring_ranks()
             self.global_pg.barrier().wait()
         except Exception as e:
             self._logger.error(f"Error recreating process group: {e}. Retrying...")

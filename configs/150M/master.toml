@@ -18,14 +18,14 @@ total_steps = 10_000
 lr = 4e-4
 
 [diloco]
-inner_steps = 50
+inner_steps = 10
 
 [ckpt]
-interval = 50
+interval = 10
 topk = 40
 path = "./data/test"
 skip_dataloader = true
 
 [ckpt.remote]
-interval = 50
+interval = 10
 path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime"
