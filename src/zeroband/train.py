@@ -296,16 +296,18 @@ def train(config: Config):
                 # TODO: 2. use ckpt.load to resume
                 if config.ckpt.resume:
                     while True:
-                        upload_status = elastic_device_mesh.global_store.get("upload_successful").decode("utf-8")
+                        upload_status = elastic_device_mesh.god_store.get("upload_successful").decode("utf-8")
                         if upload_status == "stable":
                             break
                         else:
                             logger.info(f"upload status: {upload_status}")
                             time.sleep(5)
+                    print(f"{world_info.local_rank} rank check before ckpt manager")
                     ckpt_manager.load(
                         resume_ckpt_path=config.ckpt.resume,
                         skip_dataloader=config.ckpt.skip_dataloader,
                         data_path=config.ckpt.data_path,
+                        group=elastic_device_mesh.ckpt_pg,
                     )
                 # TODO: 3: tell the master to be free
                 elastic_device_mesh.global_store.set("live_recovery_loaded", "success")
@@ -495,7 +497,7 @@ def train(config: Config):
             # we only allow to checkpoint after a outer step. For non diloco training outer step = 1 anyway
 
             do_remote = config.ckpt.remote is not None and training_progress.step % config.ckpt.remote.interval == 0
-            ckpt_manager.save(remote=do_remote, group=elastic_device_mesh.ckpt_pg, store=elastic_device_mesh.global_store)
+            ckpt_manager.save(remote=do_remote, group=elastic_device_mesh.ckpt_pg, store=elastic_device_mesh.god_store)
             log_hash_training_state(
                 config, model, inner_optimizer, diloco, metric_logger, step=training_progress.step, id="save"
             )

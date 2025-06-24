@@ -202,6 +202,7 @@ class ElasticDeviceMesh:
             self.global_pg = dist.ProcessGroupGloo(
                 prefix_store, self.world_info.global_rank, self.world_info.global_world_size, GLOBAL_PG_TIMEOUT
             )
+            self.ckpt_pg = None
             ranks = list(range(self.world_info.local_world_size)) # only the ranks from the first node attend ckpt
             self.ckpt_pg = dist.new_group(
                 ranks=ranks,

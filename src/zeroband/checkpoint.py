@@ -524,6 +524,7 @@ class CkptManager:
         resume_ckpt_path: str,
         skip_dataloader: bool = False,
         data_path: str | None = None,
+        group = None,
     ) -> None:
         """
         loading should be done after fsdp wrap and optimizer init.
@@ -575,7 +576,7 @@ class CkptManager:
             else:
                 self._logger.warning(f"Expected a single distcp file to duplicate, but found: {distcp_files}")
 
-        dcp.load(self.states, checkpoint_id=resume_ckpt_path)
+        dcp.load(self.states, checkpoint_id=resume_ckpt_path, process_group=group)
 
         if self.config.token_count is not None:
             self.training_progress.total_tokens = self.config.token_count
