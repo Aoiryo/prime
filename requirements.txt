@@ -1,0 +1,22 @@
+# Main dependencies
+torch==2.7
+numpy
+setuptools
+transformers>=4.44.2
+datasets
+torchdata>=0.8.0
+fsspec[gcs]>=2024.3.1
+ninja
+zstandard
+pyarrow
+toposolve>=0.1.17
+psutil
+liger-kernel-nightly>=0.5.2.dev20250122195349
+
+# Direct Git dependencies
+pydantic_config @ git+https://github.com/samsja/pydantic_config.git@b7becc3
+torch-shampoo @ git+https://github.com/facebookresearch/optimizers.git@main
+
+# Optional (all extras combined here)
+wandb
+lm-eval
