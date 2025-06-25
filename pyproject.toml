@@ -5,7 +5,7 @@ description = "ZeroBand is a production ready codebase for decentralized trainin
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "torch==2.7",
+    "torch==2.5.1",
     "numpy",
     "setuptools",
     "transformers>=4.44.2",
@@ -39,7 +39,3 @@ line-length = 120
 
 [tool.uv]
 dev-dependencies = ["ruff>=0.5.0", "pre-commit>=3.0.0","pytest>=7.0.0", "faker"]
-
-[tool.setuptools]
-package-dir = {"" = "src"}
-packages = ["zeroband"]
