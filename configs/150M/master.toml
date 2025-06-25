@@ -28,4 +28,4 @@ skip_dataloader = true
 
 [ckpt.remote]
 interval = 10
-path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime"
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/another_prime"

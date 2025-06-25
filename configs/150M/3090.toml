@@ -30,4 +30,4 @@ live_recovery_rank_src = 0
 
 [ckpt.remote]
 interval = 10
-path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime"
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/another_prime"
