@@ -435,6 +435,7 @@ class CkptManager:
             if store is not None:
                 print("setting the store...")
                 store.set("upload_successful", "stable")
+                time.sleep(1)
             else:
                 print("the store is None!!!!")
 
