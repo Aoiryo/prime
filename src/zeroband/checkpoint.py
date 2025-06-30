@@ -317,7 +317,7 @@ class CkptManager:
         non_error_barrier()
         if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
             if remote and self.config.remote is not None:
-                self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store)
+                self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store, blocking=False)
 
     @torch.no_grad()
     def _save(self, ckpt_path: str, group = None):
