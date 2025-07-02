@@ -191,6 +191,7 @@ def train(config: Config, args = None):
                 vocab_size=len(tokenizer) if config.name_model != "debugmodel" or not config.data.fake else TEST_VOCAB_SIZE,
             )
         else:
+            device = torch.device(f"cuda:{torch.cuda.current_device()}")
             if args.vae == "f8d4":
                 assert args.resolution % 8 == 0, "Image size must be divisible by 8"
                 latent_size = args.resolution // 8
