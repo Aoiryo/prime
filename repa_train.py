@@ -168,7 +168,7 @@ def train(config: Config, args = None):
             train_sampler = DistributedSampler(
                 train_dataset,
                 num_replicas=world_info.world_size,
-                rank=rank,
+                rank=world_info.rank,
                 shuffle=True
             )
 
@@ -701,7 +701,7 @@ def train(config: Config, args = None):
             assert isinstance(vae_loss, torch.Tensor)
             assert isinstance(d_loss, torch.Tensor)
             assert isinstance(sit_loss, torch.Tensor)
-            
+
             metrics = {
                 "vae_loss": vae_loss.item(),
                 "d_loss": d_loss.item(),
