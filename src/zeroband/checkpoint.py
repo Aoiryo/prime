@@ -184,6 +184,8 @@ class CkptManager:
         data_rank: int | None,
         diloco_offloaded_param_list: list[nn.Parameter] | None,
         diloco_offloaded_optimizer: Optimizer | None,
+        model_name: str = "test",
+        last_flag: bool = True,
     ):
         self.config = config
 
@@ -241,13 +243,30 @@ class CkptManager:
 
     def _init_state(self):
         # states can only be stateful object, hence we need to wrap Model and Optimizer
-        self.states: dict[str, Stateful] = {
-            "model": ModelWrapper(self.model),
-            "optimizer": OptimizerWrapper(self.model, self.optimizer),
-            "scheduler": self.scheduler,
-            # "dataloader": self.dataloader, # ignoring dataloader for now as each rank has its own dataloader
-            "training_progress": self.training_progress,
-        }
+        if not isinstance(self.model, dict) and not isinstance(self.optimizer, dict):
+            self.states: dict[str, Stateful] = {
+                "model": ModelWrapper(self.model),
+                "optimizer": OptimizerWrapper(self.model, self.optimizer),
+                "scheduler": self.scheduler,
+                # "dataloader": self.dataloader, # ignoring dataloader for now as each rank has its own dataloader
+                "training_progress": self.training_progress,
+            }
+        elif isinstance(self.model, dict) and isinstance(self.optimizer, dict):
+            assert len(self.model) == len(self.optimizer), "model and optimizer must have the same length"
+            self.states = {}
+            for name, model in self.model.items():
+                self.states[name] = ModelWrapper(model)
+            for name, optimizer in self.optimizer.items():
+                model = self.model[name] # NOTE: assert that model and optimizer have the same key
+                self.states[name] = OptimizerWrapper(model, optimizer)
+            self.states["scheduler"] = self.scheduler
+            self.states["training_progress"] = self.training_progress
+        else:
+            raise ValueError(
+                "model and optimizer must be either both nn.Module or both list of nn.Module, got: "
+                f"{type(self.model)} and {type(self.optimizer)}"
+            )
+
 
         # if self.diloco_offloaded_optimizer is not None:
         #     # even if the diloco_offloaded target the cpu list model, we still use the gpu model to load and save state.
@@ -300,13 +319,13 @@ class CkptManager:
 
         """
 
-        step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step}")
+        step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step_{self.model_name}")
 
         if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
             self.remote_path_cleanup(self.config.remote.path, self.config.topk)
 
         if remote and self.config.remote is not None:
-            remote_ckpt_path = os.path.join(self.config.remote.path, f"step_{self.training_progress.step}")
+            remote_ckpt_path = os.path.join(self.config.remote.path, f"step_{self.training_progress.step}_{self.model_name}")
 
         # if we are not in self recovery mode we save to disk
         time_start = time.perf_counter()
@@ -315,7 +334,7 @@ class CkptManager:
 
         # push to remote
         non_error_barrier()
-        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
+        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0 and self.last_flag == True:
             if remote and self.config.remote is not None:
                 self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store, blocking=False)
 
