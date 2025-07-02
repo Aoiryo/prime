@@ -45,6 +45,7 @@ from dataset import CustomINH5Dataset
 from utils import load_encoders, normalize_latents, denormalize_latents, preprocess_imgs_vae, count_trainable_params
 from copy import deepcopy
 from collections import OrderedDict
+from models.sit import SiT_models
 
 
 def sigterm_handler(signum, frame):
@@ -819,81 +820,6 @@ if __name__ == "__main__":
     world_info = get_world_info()
     logger = get_logger(config)
 
-    parser = argparse.ArgumentParser(description="Training")
-
-    # logging params
-    parser.add_argument("--output-dir", type=str, default="exps")
-    parser.add_argument("--exp-name", type=str, required=True)
-    parser.add_argument("--logging-dir", type=str, default="logs")
-    parser.add_argument("--report-to", type=str, default="wandb")
-    parser.add_argument("--sampling-steps", type=int, default=10000)
-    parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--continue-train-exp-dir", type=str, default=None)
-    parser.add_argument("--wandb-history-path", type=str, default=None)
-
-    # SiT model params
-    parser.add_argument("--model", type=str, default="SiT-XL/2", choices=SiT_models.keys(),
-                        help="The model to train.")
-    parser.add_argument("--num-classes", type=int, default=1000)
-    parser.add_argument("--encoder-depth", type=int, default=8)
-    parser.add_argument("--qk-norm",  action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument("--fused-attn", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--bn-momentum", type=float, default=0.1)
-    parser.add_argument("--compile", action=argparse.BooleanOptionalAction, default=True,
-                        help="Whether to compile the model for faster training")
-
-    # dataset params
-    parser.add_argument("--data-dir", type=str, default="data")
-    parser.add_argument("--resolution", type=int, choices=[256], default=256)
-    parser.add_argument("--batch-size", type=int, default=256)
-
-    # precision params
-    parser.add_argument("--allow-tf32", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--mixed-precision", type=str, default="fp16", choices=["no", "fp16", "bf16"])
-
-    # optimization params
-    parser.add_argument("--epochs", type=int, default=1400)
-    parser.add_argument("--max-train-steps", type=int, default=400000)
-    parser.add_argument("--checkpointing-steps", type=int, default=50000)
-    parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
-    parser.add_argument("--learning-rate", type=float, default=1e-4)
-    parser.add_argument("--adam-beta1", type=float, default=0.9, help="The beta1 parameter for the Adam optimizer.")
-    parser.add_argument("--adam-beta2", type=float, default=0.999, help="The beta2 parameter for the Adam optimizer.")
-    parser.add_argument("--adam-weight-decay", type=float, default=0., help="Weight decay to use.")
-    parser.add_argument("--adam-epsilon", type=float, default=1e-08, help="Epsilon value for the Adam optimizer")
-    parser.add_argument("--max-grad-norm", default=1.0, type=float, help="Max gradient norm.")
-
-    # seed params
-    parser.add_argument("--seed", type=int, default=0)
-
-    # cpu params
-    parser.add_argument("--num-workers", type=int, default=4)
-
-    # loss params
-    parser.add_argument("--path-type", type=str, default="linear", choices=["linear", "cosine"])
-    parser.add_argument("--prediction", type=str, default="v", choices=["v"],
-                        help="currently we only support v-prediction")
-    parser.add_argument("--cfg-prob", type=float, default=0.1)
-    parser.add_argument("--enc-type", type=str, default='dinov2-vit-b')
-    parser.add_argument("--proj-coeff", type=float, default=0.5)
-    parser.add_argument("--weighting", default="uniform", type=str, choices=["uniform", "lognormal"],
-                        help="Loss weihgting, uniform or lognormal")
-
-    # vae params
-    parser.add_argument("--vae", type=str, default="f8d4", choices=["f8d4", "f16d32"])
-    parser.add_argument("--vae-ckpt", type=str, default="pretrained/sdvae-f8d4/sdvae-f8d4.pt")
-
-    # vae loss params
-    parser.add_argument("--disc-pretrained-ckpt", type=str, default=None)
-    parser.add_argument("--loss-cfg-path", type=str, default="configs/l1_lpips_kl_gan.yaml")
-
-    # vae training params
-    parser.add_argument("--vae-learning-rate", type=float, default=1e-4)
-    parser.add_argument("--disc-learning-rate", type=float, default=1e-4)
-    parser.add_argument("--vae-align-proj-coeff", type=float, default=1.5)
-
-    args = parser.parse_args()
-
     # torch.set_default_device("cuda")
     torch.cuda.set_device(world_info.local_rank)
 
@@ -944,7 +870,7 @@ if __name__ == "__main__":
             # logger.info("Exporting memory timeline.")
             # prof.export_memory_timeline(f"logs/mem_timeline.html", device="cuda:0")
         else:
-            train(config, args)
+            train(config)
     except Exception as e:
         # Subprocesses can prevent the main process from exiting, so we need to terminate them
         logger.info("Caught an exception, terminating children")

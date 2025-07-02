@@ -319,7 +319,7 @@ class CkptManager:
 
         """
 
-        step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step_{self.model_name}")
+        step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step}_{self.model_name}")
 
         if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
             self.remote_path_cleanup(self.config.remote.path, self.config.topk)

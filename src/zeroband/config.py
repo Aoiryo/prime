@@ -108,6 +108,75 @@ class MonitorConfig(BaseConfig):
     auth_token: str | None = None
 
 
+class RepaConfig(BaseConfig):
+    # logging params
+    output_dir: str = "exps"
+    exp_name: str
+    logging_dir: str = "logs"
+    report_to: str = "wandb"
+    sampling_steps: int = 10000
+    resume_step: int = 0
+    continue_train_exp_dir: str | None = None
+    wandb_history_path: str | None = None
+
+    # SiT model params
+    model: Literal["SiT-B/2", "SiT-L/2", "SiT-XL/2", "SiT-B/1", "SiT-L/1", "SiT-XL/1"] = "SiT-XL/2"
+    num_classes: int = 1000
+    encoder_depth: int = 8
+    qk_norm: bool = False
+    fused_attn: bool = True
+    bn_momentum: float = 0.1
+    compile: bool = True
+
+    # dataset params
+    data_dir: str = "data"
+    resolution: Literal[256] = 256
+    batch_size: int = 256
+
+    # precision params
+    allow_tf32: bool = True
+    mixed_precision: Literal["no", "fp16", "bf16"] = "fp16"
+
+    # optimization params
+    epochs: int = 1400
+    max_train_steps: int = 400000
+    checkpointing_steps: int = 50000
+    gradient_accumulation_steps: int = 1
+    learning_rate: float = 1e-4
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.999
+    adam_weight_decay: float = 0.0
+    adam_epsilon: float = 1e-8
+    max_grad_norm: float = 1.0
+
+    # seed params
+    seed: int = 0
+
+    # cpu params
+    num_workers: int = 4
+
+    # loss params
+    path_type: Literal["linear", "cosine"] = "linear"
+    prediction: Literal["v"] = "v"
+    cfg_prob: float = 0.1
+    enc_type: str = "dinov2-vit-b"
+    proj_coeff: float = 0.5
+    weighting: Literal["uniform", "lognormal"] = "uniform"
+
+    # vae params
+    vae: Literal["f8d4", "f16d32"] = "f8d4"
+    vae_ckpt: str = "pretrained/sdvae-f8d4/sdvae-f8d4.pt"
+
+    # vae loss params
+    disc_pretrained_ckpt: str | None = None
+    loss_cfg_path: str = "configs/l1_lpips_kl_gan.yaml"
+
+    # vae training params
+    vae_learning_rate: float = 1e-4
+    disc_learning_rate: float = 1e-4
+    vae_align_proj_coeff: float = 1.5
+
+
 class RemoteConfig(BaseConfig):
     path: str  # could be a s3 path
     interval: int
@@ -157,7 +226,7 @@ ENV_VAR_PREFIX = "ZERO_BAND_"
 class Config(BaseConfig):
     # main config
     name_model: Literal["debugmodel", "70M","150M", "271M", "1B", "7B", "10B", "13B", "26B", "70B"] = "150M"
-    type_model: Literal["llama2", "llama3"] = "llama3"
+    type_model: Literal["llama2", "llama3", "repa"] = "llama3"
 
     # Project/Run
     project: str = "zeroband"
@@ -176,6 +245,7 @@ class Config(BaseConfig):
     optim: OptimConfig = OptimConfig()
     train: TrainConfig
     monitor: MonitorConfig | None = None
+    repa: RepaConfig | None = None
 
     ckpt: CkptConfig = CkptConfig()
 
