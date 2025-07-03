@@ -129,7 +129,7 @@ def train(config: Config, args = None):
         f"The micro batch size ({config.train.micro_bs}) must divide the number of samples on each GPU ({batch_size})."
     )
     # REPA use a default of 1 grad accu step
-    gradient_accumulation_steps = args.gradient_accumulation_steps
+    gradient_accumulation_steps = config.repa.gradient_accumulation_steps
 
     if config.ckpt is not None and config.ckpt.interval is not None and config.diloco is not None:
         assert config.ckpt.interval % config.diloco.inner_steps == 0, (
@@ -164,7 +164,7 @@ def train(config: Config, args = None):
             )
             train_dataloader_iterator = iter(train_dataloader)
         else:
-            train_dataset = CustomINH5Dataset(args.data_dir)
+            train_dataset = CustomINH5Dataset(config.repa.data_dir)
 
             train_sampler = DistributedSampler(
                 train_dataset,
@@ -173,13 +173,13 @@ def train(config: Config, args = None):
                 shuffle=True
             )
 
-            local_batch_size = args.batch_size // world_info.world_size
+            local_batch_size = config.repa.batch_size // world_info.world_size
             train_dataloader = DataLoader(
                 train_dataset,
                 batch_size=local_batch_size,
                 shuffle=(train_sampler is None),
                 sampler=train_sampler,
-                num_workers=args.num_workers,
+                num_workers=config.repa.num_workers,
                 pin_memory=True,
                 drop_last=True
             ) # TODO: support micro bs, but for now we stick to the original handling from RE
@@ -193,36 +193,36 @@ def train(config: Config, args = None):
             )
         else:
             device = torch.device(f"cuda:{torch.cuda.current_device()}")
-            if args.vae == "f8d4":
-                assert args.resolution % 8 == 0, "Image size must be divisible by 8"
-                latent_size = args.resolution // 8
+            if config.repa.vae == "f8d4":
+                assert config.repa.resolution % 8 == 0, "Image size must be divisible by 8"
+                latent_size = config.repa.resolution // 8
                 in_channels = 4
-            elif args.vae == "f16d32":
-                assert args.resolution % 16 == 0, "Image size must be divisible by 16"
-                latent_size = args.resolution // 16
+            elif config.repa.vae == "f16d32":
+                assert config.repa.resolution % 16 == 0, "Image size must be divisible by 16"
+                latent_size = config.repa.resolution // 16
                 in_channels = 32
             else:
                 raise NotImplementedError()
 
             # load encoders
-            if args.enc_type != None:
+            if config.repa.enc_type != None:
                 encoders, encoder_types, architectures = load_encoders(
-                    args.enc_type, device, args.resolution
+                    config.repa.enc_type, device, config.repa.resolution
                 )
             else:
                 raise NotImplementedError()
-            z_dims = [encoder.embed_dim for encoder in encoders] if args.enc_type != 'None' else [0]
+            z_dims = [encoder.embed_dim for encoder in encoders] if config.repa.enc_type != 'None' else [0]
 
             # SiT model
-            block_kwargs = {"fused_attn": args.fused_attn, "qk_norm": args.qk_norm}
-            model = SiT_models[args.model](
+            block_kwargs = {"fused_attn": config.repa.fused_attn, "qk_norm": config.repa.qk_norm}
+            model = SiT_models[config.repa.model](
                 input_size=latent_size,
                 in_channels=in_channels,
-                num_classes=args.num_classes,
-                class_dropout_prob=args.cfg_prob,
+                num_classes=config.repa.num_classes,
+                class_dropout_prob=config.repa.cfg_prob,
                 z_dims=z_dims,
-                encoder_depth=args.encoder_depth,
-                bn_momentum=args.bn_momentum,
+                encoder_depth=config.repa.encoder_depth,
+                bn_momentum=config.repa.bn_momentum,
                 **block_kwargs
             ).to(device)
 
@@ -231,18 +231,18 @@ def train(config: Config, args = None):
             requires_grad(ema, False)
 
             # load VAE ckpt
-            vae = vae_models[args.vae]().to(device)
-            vae_ckpt = torch.load(args.vae_ckpt, map_location=device)
+            vae = vae_models[config.repa.vae]().to(device)
+            vae_ckpt = torch.load(config.repa.vae_ckpt, map_location=device)
             vae.load_state_dict(vae_ckpt, strict=False)
             del vae_ckpt
 
             # init bn
-            latents_stats = torch.load(args.vae_ckpt.replace(".pt", "-latents-stats.pt"))
+            latents_stats = torch.load(config.repa.vae_ckpt.replace(".pt", "-latents-stats.pt"))
             latents_scale = latents_stats["latents_scale"].squeeze().to(device)
             latents_bias = latents_stats["latents_bias"].squeeze().to(device)
             model.init_bn(latents_bias=latents_bias, latents_scale=latents_scale)
 
-            loss_cfg = OmegaConf.load(args.loss_cfg_path)
+            loss_cfg = OmegaConf.load(config.repa.loss_cfg_path)
             vae_loss_fn = ReconstructionLoss_Single_Stage(loss_cfg).to(device) # TODO: put loss cfg to the path and set
 
             update_ema(ema, model, decay=0)
@@ -313,26 +313,26 @@ def train(config: Config, args = None):
 
         optimizer_vae = torch.optim.AdamW(
             vae.parameters(),
-            lr=args.vae_learning_rate,
-            betas=(args.adam_beta1, args.adam_beta2),
-            weight_decay=args.adam_weight_decay,
-            eps=args.adam_epsilon,
+            lr=config.repa.vae_learning_rate,
+            betas=(config.repa.adam_beta1, config.repa.adam_beta2),
+            weight_decay=config.repa.adam_weight_decay,
+            eps=config.repa.adam_epsilon,
         )
 
         optimizer = torch.optim.AdamW(
             model.parameters(),
-            lr=args.learning_rate,
-            betas=(args.adam_beta1, args.adam_beta2),
-            weight_decay=args.adam_weight_decay,
-            eps=args.adam_epsilon,
+            lr=config.repa.learning_rate,
+            betas=(config.repa.adam_beta1, config.repa.adam_beta2),
+            weight_decay=config.repa.adam_weight_decay,
+            eps=config.repa.adam_epsilon,
         )
         
         optimizer_loss_fn = torch.optim.AdamW(
             vae_loss_fn.parameters(),
-            lr=args.disc_learning_rate,
-            betas=(args.adam_beta1, args.adam_beta2),
-            weight_decay=args.adam_weight_decay,
-            eps=args.adam_epsilon,
+            lr=config.repa.disc_learning_rate,
+            betas=(config.repa.adam_beta1, config.repa.adam_beta2),
+            weight_decay=config.repa.adam_weight_decay,
+            eps=config.repa.adam_epsilon,
         )
 
         diloco = Diloco(config.diloco, [vae, model, vae_loss_fn], elastic_device_mesh) if config.diloco is not None else None
@@ -524,9 +524,9 @@ def train(config: Config, args = None):
                                 posterior, z, recon_image = vae(processed_image)
 
                                 loss_kwargs = dict(
-                                    path_type=args.path_type,
-                                    prediction=args.prediction,
-                                    weighting=args.weighting,
+                                    path_type=config.repa.path_type,
+                                    prediction=config.repa.prediction,
+                                    weighting=config.repa.weighting,
                                 )
                                 # Record the time_input and noises for the VAE alignment, so that we avoid sampling again
                                 time_input = None
@@ -550,24 +550,24 @@ def train(config: Config, args = None):
                                     time_input=time_input,
                                     noises=noises,
                                 )
-                                vae_loss = vae_loss + args.vae_align_proj_coeff * vae_align_outputs["proj_loss"].mean()
+                                vae_loss = vae_loss + config.repa.vae_align_proj_coeff * vae_align_outputs["proj_loss"].mean()
 
                                 time_input = vae_align_outputs["time_input"]
                                 noises = vae_align_outputs["noises"]
 
-                                (vae_loss / args.gradient_accumulation_steps).backward()
+                                (vae_loss / config.repa.gradient_accumulation_steps).backward()
 
-                                if args.max_grad_norm > 0:
-                                    grad_norm_vae = torch.nn.utils.clip_grad_norm_(vae.parameters(), args.max_grad_norm)
+                                if config.repa.max_grad_norm > 0:
+                                    grad_norm_vae = torch.nn.utils.clip_grad_norm_(vae.parameters(), config.repa.max_grad_norm)
                                 optimizer_vae.step()
                                 optimizer_vae.zero_grad()
 
                                 d_loss, d_loss_dict = vae_loss_fn(processed_image, recon_image, posterior, global_step, "discriminator")
                                 d_loss = d_loss.mean()
-                                (d_loss / args.gradient_accumulation_steps).backward()
+                                (d_loss / config.repa.gradient_accumulation_steps).backward()
 
-                                if args.max_grad_norm > 0:
-                                    grad_norm_disc = torch.nn.utils.clip_grad_norm_(vae_loss_fn.parameters(), args.max_grad_norm)
+                                if config.repa.max_grad_norm > 0:
+                                    grad_norm_disc = torch.nn.utils.clip_grad_norm_(vae_loss_fn.parameters(), config.repa.max_grad_norm)
                                 optimizer_loss_fn.step()
                                 optimizer_loss_fn.zero_grad()
 
@@ -575,7 +575,7 @@ def train(config: Config, args = None):
                                 model.train()
 
                                 # Forward the SiT model
-                                loss_kwargs["weighting"] = args.weighting
+                                loss_kwargs["weighting"] = config.repa.weighting
                                 loss_kwargs["align_only"] = False
                                 sit_outputs = model(
                                     x=z.detach(),
@@ -587,11 +587,11 @@ def train(config: Config, args = None):
                                 )
 
                                 # compute diffusion loss and REPA alignment loss, backpropagate the SiT loss, and update the model
-                                sit_loss = sit_outputs["denoising_loss"].mean() + args.proj_coeff * sit_outputs["proj_loss"].mean()
-                                (sit_loss / args.gradient_accumulation_steps).backward()
+                                sit_loss = sit_outputs["denoising_loss"].mean() + config.repa.proj_coeff * sit_outputs["proj_loss"].mean()
+                                (sit_loss / config.repa.gradient_accumulation_steps).backward()
 
-                                if args.max_grad_norm > 0:
-                                    grad_norm_sit = torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                                if config.repa.max_grad_norm > 0:
+                                    grad_norm_sit = torch.nn.utils.clip_grad_norm_(model.parameters(), config.repa.max_grad_norm)
                                 optimizer.step()
                                 optimizer.zero_grad()
 
