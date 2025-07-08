@@ -318,25 +318,25 @@ class CkptManager:
         Save in the subfolder `step_<step>`.
 
         """
+        for model_name, obj in self.model:
+            step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step}_{model_name}")
 
-        step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step}_{self.model_name}")
+            if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
+                self.remote_path_cleanup(self.config.remote.path, self.config.topk)
 
-        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
-            self.remote_path_cleanup(self.config.remote.path, self.config.topk)
-
-        if remote and self.config.remote is not None:
-            remote_ckpt_path = os.path.join(self.config.remote.path, f"step_{self.training_progress.step}_{self.model_name}")
-
-        # if we are not in self recovery mode we save to disk
-        time_start = time.perf_counter()
-        self._save(step_ckpt_path, group)
-        self._logger.info(f"Saved checkpoint to {step_ckpt_path} in {time.perf_counter() - time_start} seconds")
-
-        # push to remote
-        non_error_barrier()
-        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0 and self.last_flag == True:
             if remote and self.config.remote is not None:
-                self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store, blocking=False)
+                remote_ckpt_path = os.path.join(self.config.remote.path, f"step_{self.training_progress.step}_{model_name}")
+
+            # if we are not in self recovery mode we save to disk
+            time_start = time.perf_counter()
+            self._save(step_ckpt_path, group)
+            self._logger.info(f"Saved checkpoint to {step_ckpt_path} in {time.perf_counter() - time_start} seconds")
+
+            # push to remote
+            non_error_barrier()
+            if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0 and self.last_flag == True:
+                if remote and self.config.remote is not None:
+                    self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store, blocking=False)
 
     @torch.no_grad()
     def _save(self, ckpt_path: str, group = None):
