@@ -10,6 +10,9 @@ import torch
 import torch.distributed as dist
 from torch.distributed._composable.fsdp import fully_shard, MixedPrecisionPolicy, CPUOffloadPolicy  # type: ignore
 from torch.autograd.profiler import record_function
+from torch.utils.data import DistributedSampler
+from torch.utils.data import DataLoader
+from torchvision.transforms import Normalize
 
 from zeroband.checkpoint import CkptManager, TrainingProgress
 from zeroband.comms import ElasticDeviceMesh
@@ -43,9 +46,13 @@ import argparse
 
 from dataset import CustomINH5Dataset
 from utils import load_encoders, normalize_latents, denormalize_latents, preprocess_imgs_vae, count_trainable_params
-from copy import deepcopy
+import copy
 from collections import OrderedDict
 from models.sit import SiT_models
+from models.autoencoder import vae_models
+from omegaconf import OmegaConf
+from loss.losses import ReconstructionLoss_Single_Stage
+from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 
 
 def sigterm_handler(signum, frame):
@@ -115,6 +122,38 @@ def update_ema(ema_model, model, decay=0.9999):
         else:
             # Direct copy for non-float buffers
             ema_buffers[name].copy_(buffer)
+
+
+def requires_grad(model, flag=True):
+    """
+    Set requires_grad flag for all parameters in a model.
+    """
+    for p in model.parameters():
+        p.requires_grad = flag
+
+
+def preprocess_raw_image(x, enc_type):
+    resolution = x.shape[-1]
+    if 'clip' in enc_type:
+        x = x / 255.
+        x = torch.nn.functional.interpolate(x, 224 * (resolution // 256), mode='bicubic')
+        x = Normalize(CLIP_DEFAULT_MEAN, CLIP_DEFAULT_STD)(x)
+    elif 'mocov3' in enc_type or 'mae' in enc_type:
+        x = x / 255.
+        x = Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)(x)
+    elif 'dinov2' in enc_type:
+        x = x / 255.
+        x = Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)(x)
+        x = torch.nn.functional.interpolate(x, 224 * (resolution // 256), mode='bicubic')
+    elif 'dinov1' in enc_type:
+        x = x / 255.
+        x = Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)(x)
+    elif 'jepa' in enc_type:
+        x = x / 255.
+        x = Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)(x)
+        x = torch.nn.functional.interpolate(x, 224 * (resolution // 256), mode='bicubic')
+
+    return x
 
 
 def train(config: Config, args = None):
@@ -193,6 +232,7 @@ def train(config: Config, args = None):
             )
         else:
             device = torch.device(f"cuda:{torch.cuda.current_device()}")
+            print(f"{os.getenv('LOCAL_RANK')}, thinks it should use{device}")
             if config.repa.vae == "f8d4":
                 assert config.repa.resolution % 8 == 0, "Image size must be divisible by 8"
                 latent_size = config.repa.resolution // 8
@@ -245,18 +285,18 @@ def train(config: Config, args = None):
             loss_cfg = OmegaConf.load(config.repa.loss_cfg_path)
             vae_loss_fn = ReconstructionLoss_Single_Stage(loss_cfg).to(device) # TODO: put loss cfg to the path and set
 
-            update_ema(ema, model, decay=0)
+            # update_ema(ema, model, decay=0)
 
     gpu_peak_flops = get_peak_flops(torch.cuda.get_device_name(torch.device("cuda")))
     logger.info(f"Peak FLOPS used for computing MFU: {gpu_peak_flops:.3e}")
 
-    num_params = get_num_params(model, exclude_embedding=True)
-    logger.info(f"Number of parameters: {num_params}")
-    num_flop_per_token = get_num_flop_per_token(
-        num_params,
-        model_config,
-        config.data.seq_length,
-    )
+    # num_params = get_num_params(model, exclude_embedding=True)
+    # logger.info(f"Number of parameters: {num_params}")
+    # num_flop_per_token = get_num_flop_per_token(
+    #     num_params,
+    #     model_config,
+    #     config.data.seq_length,
+    # )
 
     with sw.record_block("Shard Model"):
         if config.train.ac_ckpt:
@@ -279,7 +319,7 @@ def train(config: Config, args = None):
         
         # from ipdb import set_trace; set_trace()
         mp_policy = MixedPrecisionPolicy(
-            param_dtype=torch.bfloat16, reduce_dtype=torch.float32 if config.train.reduce_fp32 else None
+            param_dtype=torch.float32, reduce_dtype=torch.float32 if config.train.reduce_fp32 else None
         )
 
         offload_policy = CPUOffloadPolicy(pin_memory=True) if config.train.fsdp_cpu_offload else None
@@ -300,13 +340,13 @@ def train(config: Config, args = None):
             offload_policy=offload_policy,
         )
 
-        fully_shard(
-            vae_loss_fn,
-            mp_policy=mp_policy,
-            mesh=elastic_device_mesh.cuda_local_mesh,
-            reshard_after_forward=config.train.reshard_after_forward,
-            offload_policy=offload_policy,
-        )
+        # fully_shard(
+        #     vae_loss_fn,
+        #     mp_policy=mp_policy,
+        #     mesh=elastic_device_mesh.cuda_local_mesh,
+        #     reshard_after_forward=config.train.reshard_after_forward,
+        #     offload_policy=offload_policy,
+        # )
 
     # Setup optimizers
     with sw.record_block("Optimizer Setup"):
@@ -335,7 +375,7 @@ def train(config: Config, args = None):
             eps=config.repa.adam_epsilon,
         )
 
-        diloco = Diloco(config.diloco, [vae, model, vae_loss_fn], elastic_device_mesh) if config.diloco is not None else None
+        diloco = Diloco(config.diloco, [vae, model], elastic_device_mesh) if config.diloco is not None else None
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda step: 1.0) # TODO: change this later
 
@@ -494,8 +534,8 @@ def train(config: Config, args = None):
                             labels = batch["labels"]
                             block_mask = batch["block_mask"]
                         else:
-                            raw_image = batch["raw_image"]
-                            labels = batch["labels"]
+                            raw_image = batch[0].to(next(model.parameters()).dtype).to(device)
+                            labels = batch[1].to(device)
 
                     with sw.record_block("Run forward()"):
                         if config.type_model != "repa":
@@ -519,8 +559,9 @@ def train(config: Config, args = None):
                             
                                 vae.train()
                                 model.train()
-
+                                # from ipdb import set_trace; set_trace()
                                 processed_image = preprocess_imgs_vae(raw_image)
+                                # from ipdb import set_trace; set_trace()
                                 posterior, z, recon_image = vae(processed_image)
 
                                 loss_kwargs = dict(
@@ -537,7 +578,7 @@ def train(config: Config, args = None):
                                 # Avoid BN stats to be updated by the VAE
                                 model.eval()
 
-                                vae_loss, vae_loss_dict = vae_loss_fn(processed_image, recon_image, posterior, global_step, "generator")
+                                vae_loss, vae_loss_dict = vae_loss_fn(processed_image, recon_image, posterior, training_progress.step, "generator")
                                 vae_loss = vae_loss.mean()
 
                                 # Compute the REPA alignment loss for VAE updates
@@ -562,7 +603,7 @@ def train(config: Config, args = None):
                                 optimizer_vae.step()
                                 optimizer_vae.zero_grad()
 
-                                d_loss, d_loss_dict = vae_loss_fn(processed_image, recon_image, posterior, global_step, "discriminator")
+                                d_loss, d_loss_dict = vae_loss_fn(processed_image, recon_image, posterior, training_progress.step, "discriminator")
                                 d_loss = d_loss.mean()
                                 (d_loss / config.repa.gradient_accumulation_steps).backward()
 
@@ -595,7 +636,7 @@ def train(config: Config, args = None):
                                 optimizer.step()
                                 optimizer.zero_grad()
 
-                                update_ema(ema, model, decay=0)
+                                # update_ema(ema, model._orig_mod if config.train.torch_compile else model)
 
                                 inner_optimizer = None # pass compilation check
 
@@ -656,16 +697,16 @@ def train(config: Config, args = None):
                     vae_loss_allreduce = dist.all_reduce(
                         tensor=vae_loss, op=dist.ReduceOp.AVG, group=elastic_device_mesh.local_pg, async_op=True
                     )
-                    d_loss_allreduce = dist.all_reduce(
-                        tensor=d_loss, op=dist.ReduceOp.AVG, group=elastic_device_mesh.local_pg, async_op=True
-                    )
+                    # d_loss_allreduce = dist.all_reduce(
+                    #     tensor=d_loss, op=dist.ReduceOp.AVG, group=elastic_device_mesh.local_pg, async_op=True
+                    # )
                     sit_loss_allreduce = dist.all_reduce(
                         tensor=sit_loss, op=dist.ReduceOp.AVG, group=elastic_device_mesh.local_pg, async_op=True
                     )
                     assert isinstance(vae_loss_allreduce, torch.distributed.Work)
                     vae_loss_allreduce.wait()
-                    assert isinstance(d_loss_allreduce, torch.distributed.Work)
-                    d_loss_allreduce.wait()
+                    # assert isinstance(d_loss_allreduce, torch.distributed.Work)
+                    # d_loss_allreduce.wait()
                     assert isinstance(sit_loss_allreduce, torch.distributed.Work)
                     sit_loss_allreduce.wait()
 
@@ -715,15 +756,15 @@ def train(config: Config, args = None):
                 "time": time.time(),
             }
 
-            log = f"step: {training_progress.step}, loss: {loss_batch.item():.4f}"
+            log = f"step: {training_progress.step}, vae loss: {(vae_loss / config.repa.gradient_accumulation_steps):.4f}, disc loss: {(d_loss / config.repa.gradient_accumulation_steps):.4f}, sit loss: {(sit_loss / config.repa.gradient_accumulation_steps):.4f}"
 
-            tokens_per_second = perf_counter.get_tokens_per_second()
-            if tokens_per_second is not None:
-                metrics["tokens_per_second"] = tokens_per_second
-                metrics["mfu"] = (
-                    100 * num_flop_per_token * tokens_per_second / gpu_peak_flops / world_info.local_world_size
-                )
-                log += f", tokens_per_second: {tokens_per_second:.2f}, mfu: {metrics['mfu']:.2f}"
+            # tokens_per_second = perf_counter.get_tokens_per_second()
+            # if tokens_per_second is not None:
+            #     metrics["tokens_per_second"] = tokens_per_second
+                # metrics["mfu"] = (
+                #     100 * num_flop_per_token * tokens_per_second / gpu_peak_flops / world_info.local_world_size
+                # )
+                # log += f", tokens_per_second: {tokens_per_second:.2f}, mfu: {metrics['mfu']:.2f}"
 
             if config.diloco is not None:
                 metrics["num_peers"] = elastic_device_mesh.global_pg.size()
@@ -767,23 +808,23 @@ def train(config: Config, args = None):
             )
 
         if config.diloco:
-            tokens_per_second = (
-                config.optim.batch_size
-                * config.diloco.inner_steps
-                * config.data.seq_length
-                / (time.perf_counter() - time_start_outer)
-            )
-            mfu = 100 * num_flop_per_token * tokens_per_second / gpu_peak_flops / world_info.local_world_size
-            logger.info(f"effective mfu: {mfu}")
+            # tokens_per_second = (
+            #     config.optim.batch_size
+            #     * config.diloco.inner_steps
+            #     * config.data.seq_length
+            #     / (time.perf_counter() - time_start_outer)
+            # )
+            # mfu = 100 * num_flop_per_token * tokens_per_second / gpu_peak_flops / world_info.local_world_size
+            # logger.info(f"effective mfu: {mfu}")
 
             if world_info.rank == 0:
                 assert metric_logger is not None
                 metric_logger.log(
                     {
-                        "outer_mfu": mfu,
+                        # "outer_mfu": mfu,
                         "step": training_progress.step,
                         "outer_step": training_progress.outer_step,
-                        "outer_tokens_per_second": tokens_per_second,
+                        # "outer_tokens_per_second": tokens_per_second,
                         "all_reduce_step": diloco_time,
                     }
                 )

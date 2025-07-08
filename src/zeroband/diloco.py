@@ -62,12 +62,14 @@ class Diloco:
         self._logger.debug("Sync pseudo gradient %s with world size %d", " fake" if fake else "", world_size)
 
         global_pg = self.elastic_device_mesh.global_pg
-        param_idx = 0
 
         for i in range(self.config.retry_all_reduce):
             try:
+                param_idx = 0
                 for model in self.models:
                     for param in model.parameters():
+                        # NOTE: skip if not param.requires_grad because they are not in param list cpu
+
                         param_offloaded = self.param_list_cpu[param_idx]
                         assert isinstance(param_offloaded.grad, DTensor)
                         if fake:
@@ -119,7 +121,7 @@ class Diloco:
 
     @torch.no_grad()
     def get_offloaded_param(self, model: nn.Module) -> list[nn.Parameter]:
-        param_items = [(name, param) for name, param in model.named_parameters() if param.requires_grad]
+        param_items = [(name, param) for name, param in model.named_parameters()]# if param.requires_grad]
         numels = sum(param.to_local().numel() for _, param in param_items)
 
         self.offloaded_data_flat_tensor = torch.empty((numels,), device="cpu", dtype=torch.float32)
