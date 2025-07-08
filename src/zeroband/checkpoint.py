@@ -332,11 +332,11 @@ class CkptManager:
             self._save(step_ckpt_path, group)
             self._logger.info(f"Saved checkpoint to {step_ckpt_path} in {time.perf_counter() - time_start} seconds")
 
-            # push to remote
-            non_error_barrier()
-            if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0 and self.last_flag == True:
-                if remote and self.config.remote is not None:
-                    self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store, blocking=False)
+        # push to remote
+        non_error_barrier()
+        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0 and self.last_flag == True:
+            if remote and self.config.remote is not None:
+                self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store, blocking=False)
 
     @torch.no_grad()
     def _save(self, ckpt_path: str, group = None):
