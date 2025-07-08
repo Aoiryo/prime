@@ -44,6 +44,7 @@ from zeroband.utils.world_info import get_world_info
 
 import subprocess
 import re
+from collections import defaultdict
 
 
 @dataclass
@@ -318,28 +319,27 @@ class CkptManager:
         Save in the subfolder `step_<step>`.
 
         """
-        for model_name, obj in self.model:
-            step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step}_{model_name}")
+        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
+            self.remote_path_cleanup(self.config.remote.path, self.config.topk)
 
-            if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
-                self.remote_path_cleanup(self.config.remote.path, self.config.topk)
+        step_ckpt_path = os.path.join(self.config.path, f"step_{self.training_progress.step}")
 
-            if remote and self.config.remote is not None:
-                remote_ckpt_path = os.path.join(self.config.remote.path, f"step_{self.training_progress.step}_{model_name}")
+        if remote and self.config.remote is not None:
+            remote_ckpt_path = os.path.join(self.config.remote.path, f"step_{self.training_progress.step}")
 
-            # if we are not in self recovery mode we save to disk
-            time_start = time.perf_counter()
-            self._save(step_ckpt_path, group)
-            self._logger.info(f"Saved checkpoint to {step_ckpt_path} in {time.perf_counter() - time_start} seconds")
+        # if we are not in self recovery mode we save to disk
+        time_start = time.perf_counter()  
+        self._save(step_ckpt_path, group)
+        self._logger.info(f"Saved checkpoint to {step_ckpt_path} in {time.perf_counter() - time_start} seconds")
 
         # push to remote
         non_error_barrier()
-        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0 and self.last_flag == True:
+        if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
             if remote and self.config.remote is not None:
                 self._async_save_remote(step_ckpt_path, remote_ckpt_path, store=store, blocking=False)
 
     @torch.no_grad()
-    def _save(self, ckpt_path: str, group = None):
+    def _save(self, ckpt_path: str, group = None, model_name = None):
         self.wait_for_blocking_job()
 
         catch_warning = self._logger.getEffectiveLevel() <= logging.INFO
@@ -362,7 +362,6 @@ class CkptManager:
             #             print(f"  {k}")
             #     else:
             #         print(f"[Rank {rank}] {key} has no state_dict(), skipping")
-
             dcp.save(self.states, checkpoint_id=ckpt_path, process_group=group)
 
             if self.diloco_offloaded_optimizer:
@@ -372,12 +371,13 @@ class CkptManager:
 
                     torch.save(state, f)
 
-            data_path = os.path.join(ckpt_path, "data")
-            self.save_data(data_path, self.dataloader, self.world_info.local_rank)
+            if not self.config.skip_dataloader:
+                data_path = os.path.join(ckpt_path, "data")
+                self.save_data(data_path, self.dataloader, self.world_info.local_rank)
 
             non_error_barrier()
 
-            if self.config.remote_data_path is not None:
+            if self.config.remote_data_path is not None and not self.config.skip_dataloader:
                 remote_data_path = os.path.join(
                     self.config.remote_data_path, f"data_{self.data_rank}", f"step_{self.training_progress.step}"
                 )
@@ -434,7 +434,8 @@ class CkptManager:
 
 
     def _async_save_remote(self, ckpt_path: str, remote_ckpt_path: str, blocking: bool = True, store = None) -> None:
-        """asyncronously rsync a ckpt folder to a remote location. Using fsspec to handle remote cloud storage without to install
+        """
+        asyncronously rsync a ckpt folder to a remote location. Using fsspec to handle remote cloud storage without to install
         specific libraries (e.g. s3fs).
         """
 
@@ -466,6 +467,7 @@ class CkptManager:
             self.blocking_process.append(processes)
         else:
             self.non_blocking_process.append(processes)
+
 
     def wait_for_blocking_job(self):
         for process in self.blocking_process:
@@ -576,25 +578,25 @@ class CkptManager:
             )
             resume_ckpt_path = os.path.join(resume_ckpt_path, files[0])
 
-        if self.world_info.global_rank != 0:
-            distcp_files = [f for f in os.listdir(resume_ckpt_path) if f.endswith(".distcp")]
+        # if self.world_info.global_rank != 0:
+        #     distcp_files = [f for f in os.listdir(resume_ckpt_path) if f.endswith(".distcp")]
 
-            if len(distcp_files) == 1:
-                existing_file = distcp_files[0]
-                existing_path = os.path.join(resume_ckpt_path, existing_file)
+        #     if len(distcp_files) == 1:
+        #         existing_file = distcp_files[0]
+        #         existing_path = os.path.join(resume_ckpt_path, existing_file)
 
-                base_name = existing_file.split(".distcp")[0]  # __0_0
-                parts = base_name.split("_")
-                _, local_rank_str = parts[-2], parts[-1]
+        #         base_name = existing_file.split(".distcp")[0]  # __0_0
+        #         parts = base_name.split("_")
+        #         _, local_rank_str = parts[-2], parts[-1]
 
-                new_file = f"__{self.world_info.global_rank}_{local_rank_str}.distcp"
-                new_path = os.path.join(resume_ckpt_path, new_file)
+        #         new_file = f"__{self.world_info.global_rank}_{local_rank_str}.distcp"
+        #         new_path = os.path.join(resume_ckpt_path, new_file)
 
-                if not os.path.exists(new_path):
-                    self._logger.info(f"[Rank {self.world_info.global_rank}] Copying {existing_file} → {new_file}")
-                    shutil.copy(existing_path, new_path)
-            else:
-                self._logger.warning(f"Expected a single distcp file to duplicate, but found: {distcp_files}")
+        #         if not os.path.exists(new_path):
+        #             self._logger.info(f"[Rank {self.world_info.global_rank}] Copying {existing_file} → {new_file}")
+        #             shutil.copy(existing_path, new_path)
+        #     else:
+        #         self._logger.warning(f"Expected a single distcp file to duplicate, but found: {distcp_files}")
 
         dcp.load(self.states, checkpoint_id=resume_ckpt_path, process_group=group)
 

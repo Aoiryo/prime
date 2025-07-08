@@ -18,16 +18,16 @@ total_steps = 10_000
 lr = 4e-4
 
 [diloco]
-inner_steps = 10
+inner_steps = 100
 
 [ckpt]
-interval = 10
+interval = 100
 topk = 40
 path = "./data/test"
 skip_dataloader = true
 
 [ckpt.remote]
-interval = 10
+interval = 100
 path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/another_prime"
 
 [repa]
@@ -38,7 +38,7 @@ mixed_precision = "fp16"
 seed = 0
 data_dir = "data"
 output_dir = "exps"
-batch_size = 256
+batch_size = 2
 path_type = "linear"
 prediction = "v"
 weighting = "uniform"
