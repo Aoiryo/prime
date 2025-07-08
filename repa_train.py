@@ -9,6 +9,7 @@ from multiprocessing.process import _children  # type: ignore
 import torch
 import torch.distributed as dist
 from torch.distributed._composable.fsdp import fully_shard, MixedPrecisionPolicy, CPUOffloadPolicy  # type: ignore
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.autograd.profiler import record_function
 from torch.utils.data import DistributedSampler
 from torch.utils.data import DataLoader
@@ -491,15 +492,16 @@ def train(config: Config, args = None):
                 # TODO: 3: tell the master to be free
                 elastic_device_mesh.global_store.set("live_recovery_loaded", "success")
 
-                log_hash_training_state(
-                    config,
-                    model,
-                    inner_optimizer,
-                    diloco,
-                    metric_logger,
-                    step=training_progress.step,
-                    id="live_reco_recv",
-                )
+                if config.type_model != "repa":
+                    log_hash_training_state(
+                        config,
+                        model,
+                        inner_optimizer,
+                        diloco,
+                        metric_logger,
+                        step=training_progress.step,
+                        id="live_reco_recv",
+                    )
                 need_live_recovery = False
 
                 if config.ckpt.remote_data_load:

@@ -259,7 +259,7 @@ class CkptManager:
                 self.states[name] = ModelWrapper(model)
             for name, optimizer in self.optimizer.items():
                 model = self.model[name] # NOTE: assert that model and optimizer have the same key
-                self.states[name] = OptimizerWrapper(model, optimizer)
+                self.states[f"{name}_opt"] = OptimizerWrapper(model, optimizer)
             self.states["scheduler"] = self.scheduler
             self.states["training_progress"] = self.training_progress
         else:
@@ -606,8 +606,20 @@ class CkptManager:
         self._logger.debug("sync inner model")
         # todo(refactor): here we should rather let the diloco class handle this logic
         if self.diloco_offloaded_param_list is not None:
-            for param_offloaded, param in zip(self.diloco_offloaded_param_list, self.model.parameters()):
-                param_offloaded.data.to_local().copy_(param.data.to_local())
+            param_idx = 0  # index into the flat param list
+
+            for model_name, model_obj in self.model.items():
+                
+                if "loss" in model_name:
+                    continue
+
+                for param in model_obj.parameters():
+                    param_offloaded = self.diloco_offloaded_param_list[param_idx]
+
+                    # Ensure both are DTensor and copy data
+                    param_offloaded.data.to_local().copy_(param.data.to_local())
+
+                    param_idx += 1
 
         if self.diloco_offloaded_optimizer:
             with open(os.path.join(resume_ckpt_path, f"__{world_info.local_rank}_0.pt"), "rb") as f:
