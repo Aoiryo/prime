@@ -289,7 +289,7 @@ class ReconstructionLoss_Single_Stage(ReconstructionLoss_Stage2):
         if self.quantize_mode == "vae":
             self.kl_weight = loss_config.get("kl_weight", 1e-6)
             logvar_init = loss_config.get("logvar_init", 0.0)
-            self.logvar = nn.Parameter(torch.ones(size=()) * logvar_init, requires_grad=False)
+            self.logvar = nn.Parameter(torch.ones(size=(1,)) * logvar_init, requires_grad=False)
 
         # coefficient for the projection alignment loss
         self.proj_coef = loss_config.get("proj_coef", 0.0)

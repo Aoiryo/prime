@@ -341,13 +341,13 @@ def train(config: Config, args = None):
             offload_policy=offload_policy,
         )
 
-        # fully_shard(
-        #     vae_loss_fn,
-        #     mp_policy=mp_policy,
-        #     mesh=elastic_device_mesh.cuda_local_mesh,
-        #     reshard_after_forward=config.train.reshard_after_forward,
-        #     offload_policy=offload_policy,
-        # )
+        fully_shard(
+            vae_loss_fn,
+            mp_policy=mp_policy,
+            mesh=elastic_device_mesh.cuda_local_mesh,
+            reshard_after_forward=config.train.reshard_after_forward,
+            offload_policy=offload_policy,
+        )
 
     # Setup optimizers
     with sw.record_block("Optimizer Setup"):
@@ -376,7 +376,7 @@ def train(config: Config, args = None):
             eps=config.repa.adam_epsilon,
         )
 
-        diloco = Diloco(config.diloco, [vae, model], elastic_device_mesh) if config.diloco is not None else None
+        diloco = Diloco(config.diloco, [vae, model, vae_loss_fn], elastic_device_mesh) if config.diloco is not None else None
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda step: 1.0) # TODO: change this later
 
@@ -699,16 +699,16 @@ def train(config: Config, args = None):
                     vae_loss_allreduce = dist.all_reduce(
                         tensor=vae_loss, op=dist.ReduceOp.AVG, group=elastic_device_mesh.local_pg, async_op=True
                     )
-                    # d_loss_allreduce = dist.all_reduce(
-                    #     tensor=d_loss, op=dist.ReduceOp.AVG, group=elastic_device_mesh.local_pg, async_op=True
-                    # )
+                    d_loss_allreduce = dist.all_reduce(
+                        tensor=d_loss, op=dist.ReduceOp.AVG, group=elastic_device_mesh.local_pg, async_op=True
+                    )
                     sit_loss_allreduce = dist.all_reduce(
                         tensor=sit_loss, op=dist.ReduceOp.AVG, group=elastic_device_mesh.local_pg, async_op=True
                     )
                     assert isinstance(vae_loss_allreduce, torch.distributed.Work)
                     vae_loss_allreduce.wait()
-                    # assert isinstance(d_loss_allreduce, torch.distributed.Work)
-                    # d_loss_allreduce.wait()
+                    assert isinstance(d_loss_allreduce, torch.distributed.Work)
+                    d_loss_allreduce.wait()
                     assert isinstance(sit_loss_allreduce, torch.distributed.Work)
                     sit_loss_allreduce.wait()
 
