@@ -102,19 +102,27 @@ class OptimizerWrapper(Stateful):
             )
 
 
-def cast_dtensor_to_tensor(state_dict: dict[str, Any]) -> dict[str, Any]:
+def cast_dtensor_to_tensor(state_dict: dict[str, Any], add_prefix = None) -> dict[str, Any]:
     """
     Traverse a state dict and cast all DTensor in the state dict to tensor
     """
     new_state_dict = {}
-
     for key, value in state_dict.items():
         if isinstance(value, dict):
-            new_state_dict[key] = cast_dtensor_to_tensor(value)
+            if add_prefix:
+                new_state_dict[f"{add_prefix}.{key}"] = cast_dtensor_to_tensor(value)
+            else:
+                new_state_dict[key] = cast_dtensor_to_tensor(value)
         elif isinstance(value, DTensor):
-            new_state_dict[key] = value.to_local()
+            if add_prefix:
+                new_state_dict[f"{add_prefix}.{key}"] = value.to_local()
+            else:
+                new_state_dict[key] = value.to_local()
         else:
-            new_state_dict[key] = value
+            if add_prefix:
+                new_state_dict[f"{add_prefix}.{key}"] = value
+            else:
+                new_state_dict[key] = value
     return new_state_dict
 
 
@@ -274,6 +282,39 @@ class CkptManager:
         #     # main reason is that we actually don't a cpu model but just a list of cpu parameters.
         #     self.states["diloco_optimizer"] = self.diloco_offloaded_optimizer
 
+
+    @torch.no_grad()
+    def local_path_cleanup(self, local_path, topk):
+        """
+        Clean up old checkpoints in local disk path.
+        """
+        try:
+            dirs = os.listdir(local_path)
+        except Exception as e:
+            print(f"[local cleanup] Failed to list {local_path}: {e}")
+            return
+
+        step_dirs = []
+        pattern = re.compile(r"step_(\d+)$")
+        for d in dirs:
+            full_path = os.path.join(local_path, d)
+            if os.path.isdir(full_path):
+                match = pattern.search(d)
+                if match:
+                    step_dirs.append((int(match.group(1)), full_path))
+
+        step_dirs.sort()
+
+        if len(step_dirs) > topk:
+            to_delete = step_dirs[:len(step_dirs) - topk]
+            for step, path in to_delete:
+                print(f"[local cleanup] Deleting old checkpoint: {path}")
+                try:
+                    shutil.rmtree(path)
+                except Exception as e:
+                    print(f"[local cleanup] Failed to delete {path}: {e}")
+    
+
     @torch.no_grad()
     def remote_path_cleanup(self, remote_path, topk):
         """
@@ -319,6 +360,9 @@ class CkptManager:
         Save in the subfolder `step_<step>`.
 
         """
+        if self.world_info.local_rank == 0:
+            self.local_path_cleanup(self.config.path, self.config.topk)
+
         if self.world_info.global_unique_id == "master" and self.world_info.local_rank == 0:
             self.remote_path_cleanup(self.config.remote.path, self.config.topk)
 

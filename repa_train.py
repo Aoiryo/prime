@@ -14,8 +14,16 @@ from torch.autograd.profiler import record_function
 from torch.utils.data import DistributedSampler
 from torch.utils.data import DataLoader
 from torchvision.transforms import Normalize
+from torch.distributed._tensor import DTensor, distribute_tensor, Replicate
+from torch.distributed.checkpoint.state_dict import (
+    set_optimizer_state_dict,
+    set_model_state_dict,
+    get_model_state_dict,
+    get_optimizer_state_dict,
+    StateDictOptions,
+)
 
-from zeroband.checkpoint import CkptManager, TrainingProgress
+from zeroband.checkpoint import CkptManager, TrainingProgress, cast_dtensor_to_tensor
 from zeroband.comms import ElasticDeviceMesh
 from zeroband.config import Config, resolve_env_vars
 from zeroband.data import TEST_VOCAB_SIZE, get_dataloader
@@ -54,6 +62,9 @@ from models.autoencoder import vae_models
 from omegaconf import OmegaConf
 from loss.losses import ReconstructionLoss_Single_Stage
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+
+import wandb
+from samplers import euler_sampler
 
 
 def sigterm_handler(signum, frame):
@@ -155,6 +166,29 @@ def preprocess_raw_image(x, enc_type):
         x = torch.nn.functional.interpolate(x, 224 * (resolution // 256), mode='bicubic')
 
     return x
+
+
+def array2grid(x):
+    import math
+    from torchvision.utils import make_grid
+    nrow = round(math.sqrt(x.size(0)))
+    x = make_grid(x.clamp(0, 1), nrow=nrow, value_range=(0, 1))
+    x = x.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+    return x
+
+
+def cast_module_params_to_tensor(model: torch.nn.Module):
+    from torch.distributed._tensor import DTensor
+    import torch.nn as nn
+
+    for name, param in model.named_parameters(recurse=True):
+        if isinstance(param, DTensor):
+            local_param = nn.Parameter(param.to_local())
+            module = model
+            sub_names = name.split(".")
+            for sub_name in sub_names[:-1]:
+                module = getattr(module, sub_name)
+            setattr(module, sub_names[-1], local_param)
 
 
 def train(config: Config, args = None):
@@ -772,9 +806,78 @@ def train(config: Config, args = None):
                 metrics["num_peers"] = elastic_device_mesh.global_pg.size()
                 log += f", diloco_peers: {metrics['num_peers']}"
 
-            if world_info.rank == 0:
+            if world_info.rank == 0 and world_info.global_unique_id == "master":
                 assert metric_logger is not None
                 metric_logger.log(metrics)
+
+            model.eval()
+            vae.eval()
+
+            if training_progress.step % 10000 == 0:
+
+                raw_model = model.module if hasattr(model, 'module') else model
+                raw_vae = vae.module if hasattr(vae, 'module') else vae
+
+                sample_batch_size = 6
+                ys = torch.randint(1000, size=(sample_batch_size,), device=device)
+                n = ys.size(0)
+                xT = torch.randn((n, in_channels, latent_size, latent_size), device=device)
+
+                # 1. gather all the model weights from all ranks, this will hang forever
+                # if not all ranks arrive here
+                model_sd = get_model_state_dict(raw_model, options=StateDictOptions(strict=False, full_state_dict=True))
+                # 2. change dtensor to tensor, so that inference will be good with ys and xT
+                model_sd_tensor = cast_dtensor_to_tensor(model_sd)
+
+                # cast model state dict first, otherwise load state dict copy will arise an error (mixed dtensor and tensor)
+                # cast_module_params_to_tensor(raw_model)
+                # this is not needed as casting directly is not detected by torch backend, it will cause a mismatch problem later
+                # the best approach I thought of is to create a new model without distributed setting and load parameters directly
+
+                # 3. tensor model load tensor state dict
+                raw_model = SiT_models[config.repa.model](
+                    input_size=latent_size,
+                    in_channels=in_channels,
+                    num_classes=config.repa.num_classes,
+                    class_dropout_prob=config.repa.cfg_prob,
+                    z_dims=z_dims,
+                    encoder_depth=config.repa.encoder_depth,
+                    bn_momentum=config.repa.bn_momentum,
+                    **block_kwargs
+                ).to(device)
+                raw_model.load_state_dict(model_sd_tensor)
+
+                vae_sd = get_model_state_dict(raw_vae, options=StateDictOptions(strict=False, full_state_dict=True))
+                vae_sd_tensor = cast_dtensor_to_tensor(vae_sd)
+                raw_vae = vae_models[config.repa.vae]().to(device)
+                raw_vae.load_state_dict(vae_sd_tensor)
+
+                with torch.no_grad():
+                    samples = euler_sampler(  
+                        raw_model,
+                        xT, 
+                        ys,
+                        num_steps=50, 
+                        cfg_scale=4.0,
+                        guidance_low=0.,
+                        guidance_high=1.,
+                        path_type=config.repa.path_type,
+                        heun=False,
+                    ).to(torch.float32)
+            
+                latents_stats = raw_model.extract_latents_stats()
+                latents_scale = latents_stats['latents_scale'].view(1, in_channels, 1, 1)
+                latents_bias = latents_stats['latents_bias'].view(1, in_channels, 1, 1)
+                
+                with torch.no_grad():
+                    samples = raw_vae.decode(
+                        denormalize_latents(samples, latents_scale, latents_bias)
+                    ).sample
+                samples = (samples + 1) / 2.
+                
+                if world_info.rank == 0 and world_info.global_unique_id == "master":
+                    # TODO: add disable option
+                    wandb.log({"samples": wandb.Image(array2grid(samples))}, step=training_progress.step)
 
             logger.info(log)
 

@@ -1,7 +1,7 @@
 name_model = "150M"
-project = "debug_150m_zero_band"
+project = "repa_zero_band"
 type_model = "repa"
-run_name = "later_join_50_9868"
+run_name = "test_single_node"
 wandb_resume = false
 
 [train]
@@ -11,7 +11,7 @@ reshard_after_forward = false
 [optim]
 batch_size = 512
 warmup_steps = 1000
-total_steps = 10_000
+total_steps = 50_000
 
 
 [optim.optim]
@@ -22,7 +22,7 @@ inner_steps = 100
 
 [ckpt]
 interval = 100
-topk = 40
+topk = 5
 path = "./data/test"
 skip_dataloader = true
 
@@ -38,7 +38,7 @@ mixed_precision = "fp16"
 seed = 0
 data_dir = "data"
 output_dir = "exps"
-batch_size = 2
+batch_size = 64
 path_type = "linear"
 prediction = "v"
 weighting = "uniform"
