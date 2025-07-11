@@ -1,7 +1,7 @@
 name_model = "150M"
-project = "repa_zero_band"
+project = "prime_zero_band"
 type_model = "repa"
-run_name = "test_single_node"
+run_name = "repa_with_eval_50000"
 wandb_resume = false
 
 [train]
@@ -31,7 +31,7 @@ interval = 100
 path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/another_prime"
 
 [repa]
-max_train_steps = 400000
+max_train_steps = 50000
 report_to = "wandb"
 allow_tf32 = true
 mixed_precision = "fp16"

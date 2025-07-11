@@ -810,9 +810,6 @@ def train(config: Config, args = None):
                 assert metric_logger is not None
                 metric_logger.log(metrics)
 
-            model.eval()
-            vae.eval()
-
             if training_progress.step % 10000 == 0:
 
                 raw_model = model.module if hasattr(model, 'module') else model
@@ -878,6 +875,14 @@ def train(config: Config, args = None):
                 if world_info.rank == 0 and world_info.global_unique_id == "master":
                     # TODO: add disable option
                     wandb.log({"samples": wandb.Image(array2grid(samples))}, step=training_progress.step)
+
+                del raw_model
+                del model_sd
+                del model_sd_tensor
+
+                del raw_vae
+                del vae_sd
+                del vae_sd_tensor
 
             logger.info(log)
 
