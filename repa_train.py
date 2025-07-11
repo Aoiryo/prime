@@ -445,17 +445,18 @@ def train(config: Config, args = None):
             vae = torch.compile(vae, backend="inductor", mode="default")
             vae_loss_fn = torch.compile(vae_loss_fn, backend="inductor", mode="default")
 
-    # if config.ckpt.resume is not None:
-    #     with sw.record_block("Resume Checkpoint"):
-    #         # all is inplace
-    #         ckpt_manager.load(
-    #             resume_ckpt_path=config.ckpt.resume,
-    #             skip_dataloader=config.ckpt.skip_dataloader,
-    #             data_path=config.ckpt.data_path,
-    #         )
-    #         log_hash_training_state(
-    #             config, model, inner_optimizer, diloco, metric_logger, step=training_progress.step, id="resume"
-    #         )
+    if config.ckpt.restart_from_remote and config.ckpt.remote.path:
+        with sw.record_block("Resume Checkpoint"):
+            # all is inplace
+            ckpt_manager.load(
+                resume_ckpt_path=config.ckpt.restart_from_remote,
+                skip_dataloader=config.ckpt.skip_dataloader,
+                data_path=config.ckpt.data_path,
+                group=elastic_device_mesh.ckpt_pg,
+            )
+            # log_hash_training_state(
+            #     config, model, inner_optimizer, diloco, metric_logger, step=training_progress.step, id="resume"
+            # )
 
     if config.train.memory_profiler is not None:
         memory_profiler = MemoryProfiler(config.train.memory_profiler.freq, config.train.memory_profiler.snapshot_dir)
@@ -810,7 +811,7 @@ def train(config: Config, args = None):
                 assert metric_logger is not None
                 metric_logger.log(metrics)
 
-            if training_progress.step % 10000 == 0:
+            if training_progress.step % 100 == 0: # which is 100 * 100 inner steps
 
                 raw_model = model.module if hasattr(model, 'module') else model
                 raw_vae = vae.module if hasattr(vae, 'module') else vae

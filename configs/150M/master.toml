@@ -25,6 +25,7 @@ interval = 100
 topk = 5
 path = "./data/test"
 skip_dataloader = true
+restart_from_remote = "./data/restart"
 
 [ckpt.remote]
 interval = 100

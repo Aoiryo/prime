@@ -193,6 +193,7 @@ class CkptConfig(BaseConfig):
     remote_data_load: bool = False
 
     resume: str | None = None
+    restart_from_remote: str | None = None
 
     skip_dataloader: bool = False
 
