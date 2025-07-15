@@ -65,6 +65,7 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 
 import wandb
 from samplers import euler_sampler
+from itertools import cycle
 
 
 def sigterm_handler(signum, frame):
@@ -257,7 +258,8 @@ def train(config: Config, args = None):
                 pin_memory=True,
                 drop_last=True
             ) # TODO: support micro bs, but for now we stick to the original handling from RE
-            train_dataloader_iterator = iter(train_dataloader)
+            train_iterator = iter(cycle(train_dataloader))
+            steps_per_epoch = len(train_dataloader)
 
     with sw.record_block("Get Model"):
         if config.type_model != "repa":
@@ -467,8 +469,13 @@ def train(config: Config, args = None):
     logger.debug("Finished setup in %f seconds", sw.elapsed())
 
     need_live_recovery = config.ckpt.live_recovery_rank_src is not None
+
+    epoch = 0
+
     while True: # control the training loop with step
+
         model.train()
+
         if num_inner_steps > 1:
             # if we don't use diloco we don't print the outer step logs
             logger.info(f"outer_step step: {training_progress.outer_step}")
@@ -551,11 +558,16 @@ def train(config: Config, args = None):
             logger.debug("Starting inner step.")
             sw.start("inner_step")
 
+            if (inner_step + 1) % steps_per_epoch == 0:
+                epoch += 1
+                train_sampler.set_epoch(epoch)
+                print(f"Epoch {epoch}, reshuffling data.")
+
             loss_batch = 0
             z_loss_batch = 0
 
             with sw.record_block("Grad Acc Steps"):
-                for grad_acc_step in range(gradient_accumulation_steps):
+                for grad_acc_step in range(gradient_accumulation_steps): # 1
                     sw.start("grad_acc_step")
 
                     is_accumulating = grad_acc_step < gradient_accumulation_steps - 1
@@ -565,7 +577,7 @@ def train(config: Config, args = None):
                     with sw.record_block("Load batch"):
                         # TODO/NOTE: We could overlap sending the batch with communication
                         #            although to be honest the perf impact is minimal
-                        batch = next(train_dataloader_iterator) # raw image and y (label) for REPA
+                        batch = next(train_iterator) # raw image and y (label) for REPA
                         if config.type_model != "repa":
                             input_ids = batch["input_ids"]
                             labels = batch["labels"]
@@ -811,7 +823,7 @@ def train(config: Config, args = None):
                 assert metric_logger is not None
                 metric_logger.log(metrics)
 
-            if training_progress.step % 100 == 0: # which is 100 * 100 inner steps
+            if training_progress.step % 1 == 0:
 
                 raw_model = model.module if hasattr(model, 'module') else model
                 raw_vae = vae.module if hasattr(vae, 'module') else vae

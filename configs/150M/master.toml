@@ -11,25 +11,25 @@ reshard_after_forward = false
 [optim]
 batch_size = 512
 warmup_steps = 1000
-total_steps = 50_000
+total_steps = 400_000
 
 
 [optim.optim]
 lr = 4e-4
 
 [diloco]
-inner_steps = 100
+inner_steps = 150
 
 [ckpt]
-interval = 100
+interval = 150
 topk = 5
 path = "./data/test"
 skip_dataloader = true
-restart_from_remote = "./data/restart"
+restart_from_remote = "/opt/tiger/Prime_test/prime/data/restart"
 
 [ckpt.remote]
-interval = 100
-path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/another_prime"
+interval = 150
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/stable"
 
 [repa]
 max_train_steps = 50000
@@ -39,7 +39,7 @@ mixed_precision = "fp16"
 seed = 0
 data_dir = "data"
 output_dir = "exps"
-batch_size = 64
+batch_size = 256
 path_type = "linear"
 prediction = "v"
 weighting = "uniform"

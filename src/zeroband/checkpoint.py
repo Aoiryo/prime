@@ -541,46 +541,58 @@ class CkptManager:
             self.dataloader.load_state_dict(state["data_loader"])
 
     def download_latest_step(self, hdfs_root: str, local_root: str = "./data/test"):
-        import re
-        fs = fsspec.filesystem("hdfs")
         try:
-            dirs = fs.ls(hdfs_root, detail=True)
-        except Exception as e:
+            result = subprocess.run(
+                ["hdfs", "dfs", "-ls", hdfs_root],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            lines = result.stdout.strip().split("\n")
+        except subprocess.CalledProcessError as e:
             print(f"[Error] Cannot list HDFS path {hdfs_root}: {e}")
-            return False
+            return False, None
 
         # extract directories named step_x
         step_dirs = []
         pattern = re.compile(r"step_(\d+)$")
-        for item in dirs:
-            if item["type"] == "directory":
-                match = pattern.search(item["name"])
+        for line in lines:
+            parts = line.strip().split()
+            if len(parts) < 8:
+                continue
+            path = parts[-1]
+            # Check if it is a directory via 'hdfs dfs -ls' output format
+            if parts[0].startswith('d'):
+                match = pattern.search(path)
                 if match:
                     step_num = int(match.group(1))
-                    step_dirs.append((step_num, item["name"]))
+                    step_dirs.append((step_num, path))
 
         if not step_dirs:
             print(f"[Info] No step_x directories found under {hdfs_root}")
-            return False
+            return False, None
 
-        # find the latest step directory and download
+        # find the latest step directory
         step_dirs.sort()
         latest_step_num, latest_step_path = step_dirs[-1]
 
         local_dest = os.path.join(local_root, f"step_{latest_step_num}")
         os.makedirs(local_dest, exist_ok=True)
 
-        print(f"[Info] Downloading {latest_step_path} -> {local_root}")
-        
+        print(f"[Info] Downloading {latest_step_path} -> {local_dest}")
+
         world_info = get_world_info()
         if world_info.local_rank != 0:
             return True, local_dest
 
         try:
-            fs.get(latest_step_path, local_root, recursive=True)
+            subprocess.run(
+                ["hdfs", "dfs", "-get", latest_step_path, local_dest],
+                check=True
+            )
             print(f"[Success] Downloaded step_{latest_step_num} checkpoint.")
             return True, local_dest
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
             print(f"[Error] Failed to download {latest_step_path}: {e}")
             return False, None
 
