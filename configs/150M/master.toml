@@ -23,7 +23,7 @@ inner_steps = 150
 [ckpt]
 interval = 150
 topk = 5
-path = "./data/test"
+path = "/opt/tiger/Prime_test/prime/data/test"
 skip_dataloader = true
 restart_from_remote = "/opt/tiger/Prime_test/prime/data/restart"
 

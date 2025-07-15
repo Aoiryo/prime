@@ -22,10 +22,10 @@ inner_steps = 150
 
 [ckpt]
 interval = 150
-topk = 40
-path = "./data/test"
+topk = 5
+path = "/opt/tiger/Prime_test/prime/data/test"
 skip_dataloader = true
-resume = "./data/test"
+resume = "/opt/tiger/Prime_test/prime/data/test"
 live_recovery_rank_src = 0
 
 [ckpt.remote]
