@@ -351,6 +351,9 @@ def train(config: Config, args = None):
         elastic_device_mesh.cpu_local_mesh = elastic_device_mesh.mesh["intranode"]
         elastic_device_mesh.cpu_local_mesh._dim_group_infos = []
         elastic_device_mesh.cpu_local_mesh._dim_group_infos.append(elastic_device_mesh.mesh._dim_group_infos[-1])
+
+        if world_info.rank == 0 and world_info.global_unique_id == "master":
+            elastic_device_mesh.god_store.set("upload_successful", 0)  # semaphore for live recovery upload
         
         # signal.signal(signal.SIGTERM, partial(lambda edm, signum, frame: sigterm_handler(edm), elastic_device_mesh))
         
@@ -518,11 +521,11 @@ def train(config: Config, args = None):
                 # TODO: 2. use ckpt.load to resume
                 if config.ckpt.resume:
                     while True:
-                        upload_status = elastic_device_mesh.god_store.get("upload_successful").decode("utf-8")
-                        if upload_status == "stable":
+                        upload_status = int(elastic_device_mesh.god_store.get("upload_successful"))
+                        if upload_status == 0: # semaphore ref cnt = 0 -> no one is uploading
                             break
                         else:
-                            logger.info(f"upload status: {upload_status}")
+                            logger.info(f"upload status: {upload_status} instance(s) are uploading")
                             time.sleep(5)
                     print(f"{world_info.local_rank} rank check before ckpt manager")
                     ckpt_manager.load(
@@ -823,7 +826,7 @@ def train(config: Config, args = None):
                 assert metric_logger is not None
                 metric_logger.log(metrics)
 
-            if training_progress.step % 1 == 0:
+            if training_progress.step % 5000 == 0:
 
                 raw_model = model.module if hasattr(model, 'module') else model
                 raw_vae = vae.module if hasattr(vae, 'module') else vae

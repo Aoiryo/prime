@@ -487,7 +487,7 @@ class CkptManager:
             time_start = time.perf_counter()
             self._logger.info(f"start pushing {ckpt_path} to {remote_ckpt_path} asynchronously")
             if store is not None:
-                store.set("upload_successful", "uploading")
+                store.add("upload_successful", 1)
             try:
                 # rsync_fsspec(ckpt_path, destination=remote_ckpt_path)
                 self._rsync_hdfs(ckpt_path, destination=remote_ckpt_path)
@@ -498,7 +498,7 @@ class CkptManager:
             )
             if store is not None:
                 print("setting the store...")
-                store.set("upload_successful", "stable")
+                store.add("upload_successful", -1)
                 time.sleep(1)
             else:
                 print("the store is None!!!!")
