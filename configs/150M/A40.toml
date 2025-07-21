@@ -1,16 +1,58 @@
 name_model = "150M"
-project = "debug_150m_zero_band"
-type_model = "llama2"
+project = "prime_zero_band"
+type_model = "repa"
+run_name = "repa_with_eval_50000"
+wandb_resume = false
 
 [train]
-micro_bs = 32 # change this base on the gpu
+micro_bs = 16 # change this base on the gpu
 reshard_after_forward = false
 
 [optim]
 batch_size = 512
 warmup_steps = 1000
-total_steps = 88_000
+total_steps = 400_000
+
 
 [optim.optim]
 lr = 4e-4
 
+[diloco]
+inner_steps = 150
+
+[ckpt]
+interval = 150
+topk = 5
+path = "/opt/tiger/Prime_test/prime/data/test"
+skip_dataloader = true
+resume = "/opt/tiger/Prime_test/prime/data/test"
+live_recovery_rank_src = 0
+
+[ckpt.remote]
+interval = 150
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/clipp"
+
+[repa]
+max_train_steps = 50000
+report_to = "wandb"
+allow_tf32 = true
+mixed_precision = "fp16"
+seed = 0
+data_dir = "data"
+output_dir = "exps"
+batch_size = 256
+path_type = "linear"
+prediction = "v"
+weighting = "uniform"
+model = "SiT-XL/2"
+checkpointing_steps = 50000
+loss_cfg_path = "configs/l1_lpips_kl_gan.yaml"
+vae = "f8d4"
+vae_ckpt = "pretrained/sdvae/sdvae-f8d4.pt"
+disc_pretrained_ckpt = "pretrained/sdvae/sdvae-f8d4-discriminator-ckpt.pt"
+enc_type = "dinov2-vit-b"
+proj_coeff = 0.5
+encoder_depth = 8
+vae_align_proj_coeff = 1.5
+bn_momentum = 0.1
+exp_name = "sit-xl-dinov2-b-enc8-repae-sdvae-0.5-1.5-400k"

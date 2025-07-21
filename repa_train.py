@@ -353,7 +353,7 @@ def train(config: Config, args = None):
         elastic_device_mesh.cpu_local_mesh._dim_group_infos.append(elastic_device_mesh.mesh._dim_group_infos[-1])
 
         if world_info.rank == 0 and world_info.global_unique_id == "master":
-            elastic_device_mesh.god_store.set("upload_successful", 0)  # semaphore for live recovery upload
+            elastic_device_mesh.god_store.set("upload_successful", "0")  # semaphore for live recovery upload
         
         # signal.signal(signal.SIGTERM, partial(lambda edm, signum, frame: sigterm_handler(edm), elastic_device_mesh))
         
@@ -826,7 +826,7 @@ def train(config: Config, args = None):
                 assert metric_logger is not None
                 metric_logger.log(metrics)
 
-            if training_progress.step % 5000 == 0:
+            if training_progress.step % 15000 == 0:
 
                 raw_model = model.module if hasattr(model, 'module') else model
                 raw_vae = vae.module if hasattr(vae, 'module') else vae
@@ -911,6 +911,9 @@ def train(config: Config, args = None):
         if config.diloco is not None:
             assert diloco is not None
             time_start_inner = time.perf_counter()
+
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+
             diloco.step(flag=str(training_progress.outer_step))
             diloco_time = time.perf_counter() - time_start_inner
 

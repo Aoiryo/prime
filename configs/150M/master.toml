@@ -23,13 +23,12 @@ inner_steps = 150
 [ckpt]
 interval = 150
 topk = 5
-path = "/opt/tiger/Prime_test/prime/data/test"
+path = "./data/test"
 skip_dataloader = true
-restart_from_remote = "/opt/tiger/Prime_test/prime/data/restart"
 
 [ckpt.remote]
 interval = 150
-path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/stable"
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/clipp"
 
 [repa]
 max_train_steps = 50000

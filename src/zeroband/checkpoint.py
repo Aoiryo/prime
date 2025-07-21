@@ -579,15 +579,16 @@ class CkptManager:
         local_dest = os.path.join(local_root, f"step_{latest_step_num}")
         os.makedirs(local_dest, exist_ok=True)
 
-        print(f"[Info] Downloading {latest_step_path} -> {local_dest}")
+        print(f"[Info] Downloading {latest_step_path} -> {local_root}")
 
         world_info = get_world_info()
         if world_info.local_rank != 0:
+            time.sleep(10)
             return True, local_dest
 
         try:
             subprocess.run(
-                ["hdfs", "dfs", "-get", latest_step_path, local_dest],
+                ["hdfs", "dfs", "-get", latest_step_path, local_root],
                 check=True
             )
             print(f"[Success] Downloaded step_{latest_step_num} checkpoint.")
