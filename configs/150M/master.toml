@@ -28,7 +28,7 @@ skip_dataloader = true
 
 [ckpt.remote]
 interval = 150
-path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/clipp"
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/clipp_interval"
 
 [repa]
 max_train_steps = 50000
