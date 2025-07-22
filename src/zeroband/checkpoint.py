@@ -582,20 +582,17 @@ class CkptManager:
         print(f"[Info] Downloading {latest_step_path} -> {local_root}")
 
         world_info = get_world_info()
-        if world_info.local_rank != 0:
-            time.sleep(60)
-            return True, local_dest
+        if world_info.local_rank == 0:
 
-        try:
             subprocess.run(
                 ["hdfs", "dfs", "-get", latest_step_path, local_root],
                 check=True
             )
             print(f"[Success] Downloaded step_{latest_step_num} checkpoint.")
-            return True, local_dest
-        except subprocess.CalledProcessError as e:
-            print(f"[Error] Failed to download {latest_step_path}: {e}")
-            return False, None
+
+        dist.barrier()
+        
+        return True, local_dest
 
     @torch.no_grad()
     def load(
