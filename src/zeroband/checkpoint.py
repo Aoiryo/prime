@@ -583,7 +583,7 @@ class CkptManager:
 
         world_info = get_world_info()
         if world_info.local_rank != 0:
-            time.sleep(10)
+            time.sleep(60)
             return True, local_dest
 
         try:
