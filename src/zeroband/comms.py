@@ -18,7 +18,7 @@ from torch.distributed.distributed_c10d import _register_process_group, _unregis
 
 # from torch.distributed.elastic.rendezvous import get_rendezvous_handler
 
-TCPSTORE_TIMEOUT = timedelta(seconds=int(os.getenv("ZERO_BAND_GLOBAL_STORE_TIMEOUT_SECONDS", "500")))
+TCPSTORE_TIMEOUT = timedelta(seconds=int(os.getenv("ZERO_BAND_GLOBAL_STORE_TIMEOUT_SECONDS", "1200")))
 TCPSTORE_POLLING_INTERVAL = float(os.getenv("ZERO_BAND_GLOBAL_STORE_POLLING_INTERVAL_SECONDS", "0.1"))
 GLOBAL_PG_TIMEOUT = timedelta(seconds=int(os.getenv("ZERO_BAND_GLOBAL_PG_TIMEOUT_SECONDS", "600")))
 MAX_JOINERS = 100  # Maximum number of nodes that can join in a single reinit
