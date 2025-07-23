@@ -30,7 +30,7 @@ live_recovery_rank_src = 0
 
 [ckpt.remote]
 interval = 150
-path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/clipp"
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/test"
 
 [repa]
 max_train_steps = 50000
