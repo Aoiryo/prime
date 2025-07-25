@@ -2,7 +2,8 @@ name_model = "150M"
 project = "prime_zero_band"
 type_model = "repa"
 run_name = "repa_with_eval_50000"
-wandb_resume = false
+wandb_resume = true
+wandb_run_id = run_20250722_de24b967
 
 [train]
 micro_bs = 16 # change this base on the gpu
@@ -25,10 +26,11 @@ interval = 150
 topk = 5
 path = "./data/test"
 skip_dataloader = true
+restart_from_remote = "./data/restart"
 
 [ckpt.remote]
 interval = 150
-path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/test"
+path = "hdfs://harunasg/home/byte_icaip_nebudata_sg/prime/clipp_interval"
 
 [repa]
 max_train_steps = 50000

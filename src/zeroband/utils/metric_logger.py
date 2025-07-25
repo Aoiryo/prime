@@ -12,14 +12,14 @@ class MetricLogger(Protocol):
 
 
 class WandbMetricLogger(MetricLogger):
-    def __init__(self, project, logger_config, resume: bool):
+    def __init__(self, project, logger_config, resume: bool, id: str | None = None):
         if importlib.util.find_spec("wandb") is None:
             raise ImportError("wandb is not installed. Please install it to use WandbMonitor.")
 
         import wandb
 
         wandb.init(
-            project=project, config=logger_config, name=logger_config["config"]["run_name"], resume="auto" if resume else None
+            project=project, config=logger_config, name=logger_config["config"]["run_name"], resume="auto" if resume else None, id=id,
         )  # make wandb reuse the same run id if possible
 
     def log(self, metrics: dict[str, Any]):

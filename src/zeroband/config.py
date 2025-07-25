@@ -237,6 +237,7 @@ class Config(BaseConfig):
     # Logger
     metric_logger_type: Literal["wandb", "dummy"] = "wandb"
     wandb_resume: bool = False
+    wandb_run_id: str | None = None
     log_level: Literal["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_all_rank: bool = False
 

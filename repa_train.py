@@ -438,6 +438,7 @@ def train(config: Config, args = None):
         metric_logger = logger_cls(
             project=config.project,
             logger_config={"config": config.model_dump(), "world_info": world_info.json()},
+            id=config.wandb_run_id if config.wandb_run_id else None,
             resume=config.wandb_resume,
         )
     else:
