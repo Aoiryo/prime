@@ -17,10 +17,14 @@ class WandbMetricLogger(MetricLogger):
             raise ImportError("wandb is not installed. Please install it to use WandbMonitor.")
 
         import wandb
-
-        wandb.init(
-            project=project, config=logger_config, name=logger_config["config"]["run_name"], resume="auto" if resume else None, id=id,
-        )  # make wandb reuse the same run id if possible
+        if id is not None:
+            wandb.init(
+                project=project, config=logger_config, name=logger_config["config"]["run_name"], resume="auto" if resume else None, id=id,
+            )  # make wandb reuse the same run id if possible
+        else:
+            wandb.init(
+                project=project, config=logger_config, name=logger_config["config"]["run_name"], resume="auto" if resume else None,
+            )
 
     def log(self, metrics: dict[str, Any]):
         import wandb
