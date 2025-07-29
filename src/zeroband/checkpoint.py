@@ -663,9 +663,6 @@ class CkptManager:
             param_idx = 0  # index into the flat param list
 
             for model_name, model_obj in self.model.items():
-                
-                if "loss" in model_name:
-                    continue
 
                 for param in model_obj.parameters():
                     param_offloaded = self.diloco_offloaded_param_list[param_idx]
