@@ -80,8 +80,12 @@ class Diloco:
                         param_idx += 1
 
                 self.offloaded_grad_flat_tensor.div_(world_size)
+                wait_start_time = time.perf_counter()
                 self._logger.debug("Waiting on barrier")
                 self.elastic_device_mesh.monitored_barrier(flag)
+                self._logger.info(
+                    f"Barrier done in {time.perf_counter() - wait_start_time:.6f} seconds, world size: {world_size}"
+                )
 
                 self._logger.debug("Beginning all reduce")
                 for j, tensor_group in enumerate(self._offloaded_grad_grouped_tensor):

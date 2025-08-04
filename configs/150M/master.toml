@@ -3,7 +3,7 @@ project = "prime_zero_band"
 type_model = "repa"
 run_name = "repa_with_eval_50000"
 wandb_resume = true
-wandb_run_id = run_20250722_de24b967
+wandb_run_id = "run_20250722_de24b967"
 
 [train]
 micro_bs = 16 # change this base on the gpu

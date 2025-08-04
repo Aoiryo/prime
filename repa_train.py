@@ -66,7 +66,7 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 import wandb
 from samplers import euler_sampler
 from itertools import cycle
-
+import time
 
 def sigterm_handler(signum, frame):
     print(f"[Rank {os.environ.get('RANK', '?')}] Returning exit code 1...")
@@ -809,7 +809,9 @@ def train(config: Config, args = None):
                 "time": time.time(),
             }
 
-            log = f"step: {training_progress.step}, vae loss: {(vae_loss / config.repa.gradient_accumulation_steps):.4f}, disc loss: {(d_loss / config.repa.gradient_accumulation_steps):.4f}, sit loss: {(sit_loss / config.repa.gradient_accumulation_steps):.4f}"
+            elapsed = sw.stop("inner_step")
+
+            log = f"step: {training_progress.step}, vae loss: {(vae_loss / config.repa.gradient_accumulation_steps):.4f}, disc loss: {(d_loss / config.repa.gradient_accumulation_steps):.4f}, sit loss: {(sit_loss / config.repa.gradient_accumulation_steps):.4f}, it/s: {1 / elapsed:.2f if elapsed > 0 else 0:.2f}"
 
             # tokens_per_second = perf_counter.get_tokens_per_second()
             # if tokens_per_second is not None:
@@ -827,86 +829,85 @@ def train(config: Config, args = None):
                 assert metric_logger is not None
                 metric_logger.log(metrics)
 
-            if training_progress.step % 15000 == 0:
+            # if training_progress.step % 15000 == 0:
 
-                raw_model = model.module if hasattr(model, 'module') else model
-                raw_vae = vae.module if hasattr(vae, 'module') else vae
+            #     raw_model = model.module if hasattr(model, 'module') else model
+            #     raw_vae = vae.module if hasattr(vae, 'module') else vae
 
-                sample_batch_size = 6
-                ys = torch.randint(1000, size=(sample_batch_size,), device=device)
-                n = ys.size(0)
-                xT = torch.randn((n, in_channels, latent_size, latent_size), device=device)
+            #     sample_batch_size = 6
+            #     ys = torch.randint(1000, size=(sample_batch_size,), device=device)
+            #     n = ys.size(0)
+            #     xT = torch.randn((n, in_channels, latent_size, latent_size), device=device)
 
-                # 1. gather all the model weights from all ranks, this will hang forever
-                # if not all ranks arrive here
-                model_sd = get_model_state_dict(raw_model, options=StateDictOptions(strict=False, full_state_dict=True))
-                # 2. change dtensor to tensor, so that inference will be good with ys and xT
-                model_sd_tensor = cast_dtensor_to_tensor(model_sd)
+            #     # 1. gather all the model weights from all ranks, this will hang forever
+            #     # if not all ranks arrive here
+            #     model_sd = get_model_state_dict(raw_model, options=StateDictOptions(strict=False, full_state_dict=True))
+            #     # 2. change dtensor to tensor, so that inference will be good with ys and xT
+            #     model_sd_tensor = cast_dtensor_to_tensor(model_sd)
 
-                # cast model state dict first, otherwise load state dict copy will arise an error (mixed dtensor and tensor)
-                # cast_module_params_to_tensor(raw_model)
-                # this is not needed as casting directly is not detected by torch backend, it will cause a mismatch problem later
-                # the best approach I thought of is to create a new model without distributed setting and load parameters directly
+            #     # cast model state dict first, otherwise load state dict copy will arise an error (mixed dtensor and tensor)
+            #     # cast_module_params_to_tensor(raw_model)
+            #     # this is not needed as casting directly is not detected by torch backend, it will cause a mismatch problem later
+            #     # the best approach I thought of is to create a new model without distributed setting and load parameters directly
 
-                # 3. tensor model load tensor state dict
-                raw_model = SiT_models[config.repa.model](
-                    input_size=latent_size,
-                    in_channels=in_channels,
-                    num_classes=config.repa.num_classes,
-                    class_dropout_prob=config.repa.cfg_prob,
-                    z_dims=z_dims,
-                    encoder_depth=config.repa.encoder_depth,
-                    bn_momentum=config.repa.bn_momentum,
-                    **block_kwargs
-                ).to(device)
-                raw_model.load_state_dict(model_sd_tensor)
+            #     # 3. tensor model load tensor state dict
+            #     raw_model = SiT_models[config.repa.model](
+            #         input_size=latent_size,
+            #         in_channels=in_channels,
+            #         num_classes=config.repa.num_classes,
+            #         class_dropout_prob=config.repa.cfg_prob,
+            #         z_dims=z_dims,
+            #         encoder_depth=config.repa.encoder_depth,
+            #         bn_momentum=config.repa.bn_momentum,
+            #         **block_kwargs
+            #     ).to(device)
+            #     raw_model.load_state_dict(model_sd_tensor)
 
-                vae_sd = get_model_state_dict(raw_vae, options=StateDictOptions(strict=False, full_state_dict=True))
-                vae_sd_tensor = cast_dtensor_to_tensor(vae_sd)
-                raw_vae = vae_models[config.repa.vae]().to(device)
-                raw_vae.load_state_dict(vae_sd_tensor)
+            #     vae_sd = get_model_state_dict(raw_vae, options=StateDictOptions(strict=False, full_state_dict=True))
+            #     vae_sd_tensor = cast_dtensor_to_tensor(vae_sd)
+            #     raw_vae = vae_models[config.repa.vae]().to(device)
+            #     raw_vae.load_state_dict(vae_sd_tensor)
 
-                with torch.no_grad():
-                    samples = euler_sampler(  
-                        raw_model,
-                        xT, 
-                        ys,
-                        num_steps=50, 
-                        cfg_scale=4.0,
-                        guidance_low=0.,
-                        guidance_high=1.,
-                        path_type=config.repa.path_type,
-                        heun=False,
-                    ).to(torch.float32)
+            #     with torch.no_grad():
+            #         samples = euler_sampler(  
+            #             raw_model,
+            #             xT, 
+            #             ys,
+            #             num_steps=50, 
+            #             cfg_scale=4.0,
+            #             guidance_low=0.,
+            #             guidance_high=1.,
+            #             path_type=config.repa.path_type,
+            #             heun=False,
+            #         ).to(torch.float32)
             
-                latents_stats = raw_model.extract_latents_stats()
-                latents_scale = latents_stats['latents_scale'].view(1, in_channels, 1, 1)
-                latents_bias = latents_stats['latents_bias'].view(1, in_channels, 1, 1)
+            #     latents_stats = raw_model.extract_latents_stats()
+            #     latents_scale = latents_stats['latents_scale'].view(1, in_channels, 1, 1)
+            #     latents_bias = latents_stats['latents_bias'].view(1, in_channels, 1, 1)
                 
-                with torch.no_grad():
-                    samples = raw_vae.decode(
-                        denormalize_latents(samples, latents_scale, latents_bias)
-                    ).sample
-                samples = (samples + 1) / 2.
+            #     with torch.no_grad():
+            #         samples = raw_vae.decode(
+            #             denormalize_latents(samples, latents_scale, latents_bias)
+            #         ).sample
+            #     samples = (samples + 1) / 2.
                 
-                if world_info.rank == 0 and world_info.global_unique_id == "master":
-                    # TODO: add disable option
-                    wandb.log({"samples": wandb.Image(array2grid(samples))}, step=training_progress.step)
+            #     if world_info.rank == 0 and world_info.global_unique_id == "master":
+            #         # TODO: add disable option
+            #         wandb.log({"samples": wandb.Image(array2grid(samples))}, step=training_progress.step)
 
-                del raw_model
-                del model_sd
-                del model_sd_tensor
+            #     del raw_model
+            #     del model_sd
+            #     del model_sd_tensor
 
-                del raw_vae
-                del vae_sd
-                del vae_sd_tensor
+            #     del raw_vae
+            #     del vae_sd
+            #     del vae_sd_tensor
 
             logger.info(log)
 
             if config.train.memory_profiler is not None:
                 memory_profiler.step()
 
-            elapsed = sw.stop("inner_step")
             logger.debug(f"Inner step {inner_step} completed in {elapsed:.2f} seconds")
 
         if config.diloco is not None:
@@ -987,6 +988,7 @@ if __name__ == "__main__":
     torch.manual_seed(42)
 
     config = Config(**parse_argv())  # type: ignore
+    config.diloco.outer_lr = 0.1
     resolve_env_vars(config)
     world_info = get_world_info()
     logger = get_logger(config)
