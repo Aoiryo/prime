@@ -560,7 +560,7 @@ def train(config: Config, args = None):
 
         for inner_step in range(num_inner_steps):
             logger.debug("Starting inner step.")
-            sw.start("inner_step")
+            start_inner_step = time.perf_counter()
 
             if (inner_step + 1) % steps_per_epoch == 0:
                 epoch += 1
@@ -809,7 +809,7 @@ def train(config: Config, args = None):
                 "time": time.time(),
             }
 
-            elapsed = sw.stop("inner_step")
+            elapsed = time.perf_counter() - start_inner_step
 
             log = f"step: {training_progress.step}, vae loss: {(vae_loss / config.repa.gradient_accumulation_steps):.4f}, disc loss: {(d_loss / config.repa.gradient_accumulation_steps):.4f}, sit loss: {(sit_loss / config.repa.gradient_accumulation_steps):.4f}, it/s: {1 / elapsed:.2f if elapsed > 0 else 0:.2f}"
 
