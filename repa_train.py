@@ -810,8 +810,9 @@ def train(config: Config, args = None):
             }
 
             elapsed = time.perf_counter() - start_inner_step
+            it_per_s = 1 / elapsed if elapsed > 0 else 0
 
-            log = f"step: {training_progress.step}, vae loss: {(vae_loss / config.repa.gradient_accumulation_steps):.4f}, disc loss: {(d_loss / config.repa.gradient_accumulation_steps):.4f}, sit loss: {(sit_loss / config.repa.gradient_accumulation_steps):.4f}, it/s: {1 / elapsed:.2f if elapsed > 0 else 0:.2f}"
+            log = f"step: {training_progress.step}, vae loss: {(vae_loss / config.repa.gradient_accumulation_steps):.4f}, disc loss: {(d_loss / config.repa.gradient_accumulation_steps):.4f}, sit loss: {(sit_loss / config.repa.gradient_accumulation_steps):.4f}, it/s: {it_per_s:.2f}"
 
             # tokens_per_second = perf_counter.get_tokens_per_second()
             # if tokens_per_second is not None:
