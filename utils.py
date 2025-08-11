@@ -75,7 +75,7 @@ def load_encoders(enc_type, device, resolution=256):
             if 'reg' in encoder_type:
                 encoder = torch.hub.load('facebookresearch/dinov2', f'dinov2_vit{model_config}14_reg')
             else:
-                encoder = torch.hub.load('facebookresearch/dinov2', f'dinov2_vit{model_config}14')
+                encoder = torch.hub.load('/home/tiger/.cache/torch/hub/facebookresearch_dinov2_main', f'dinov2_vit{model_config}14', source='local')
             del encoder.head
             patch_resolution = 16 * (resolution // 256)
             encoder.pos_embed.data = timm.layers.pos_embed.resample_abs_pos_embed(
